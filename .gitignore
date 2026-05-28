@@ -1,0 +1,31 @@
+# Xcode
+.DS_Store
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+
+# Build
+build/
+DerivedData/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# CocoaPods
+Pods/
+
+# Carthage
+Carthage/Build/
+
+# Secrets
+*.env
+GoogleService-Info.plist
+Secrets.plist
+Config.plist
+
+# Archives
+*.xcarchive

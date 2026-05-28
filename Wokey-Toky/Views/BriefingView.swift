@@ -1,0 +1,1112 @@
+//
+//  BriefingView.swift
+//  Wokey-Toky
+//
+//  Created by 조수민 on 5/10/26.
+//
+
+import SwiftUI
+import SwiftData
+
+struct BriefingView: View {
+    @Environment(\.modelContext) private var modelContext
+
+    @Query(sort: \TaskItem.createdAt, order: .reverse)
+    private var tasks: [TaskItem]
+
+    @Query(sort: \ActivityEvent.startedAt, order: .reverse)
+    private var activities: [ActivityEvent]
+
+    @Query(sort: \ScreenContextSnapshot.capturedAt, order: .reverse)
+    private var snapshots: [ScreenContextSnapshot]
+
+    @Query(sort: \Briefing.createdAt, order: .reverse)
+    private var briefings: [Briefing]
+    
+    @Query private var llmConfigs: [LLMConfig]
+
+    @Query(sort: \UserTaskResponse.createdAt, order: .reverse)
+    private var userResponses: [UserTaskResponse]
+    
+    @Query private var responseSettingsList: [ResponseSettings]
+
+    private let briefingService = BriefingService()
+    private let evaluationService = TaskEvaluationService()
+    private let responseService = TaskResponseService()
+    private let contextBuilder = BriefingContextBuilder()
+    private let llmService = LLMService()
+
+    @State private var isGeneratingLLMBriefing = false
+    @State private var llmErrorMessage: String?
+    @State private var naturalResponseText = ""
+    @State private var appliedResponseMessages: [String] = []
+    @State private var clarificationItems: [ClarificationItem] = []
+    @State private var reviewMessages: [String] = []
+    @State private var isInterpretingResponse = false
+    @State private var interpretationErrorMessage: String?
+    
+    private var responseSettings: ResponseSettings {
+        if let settings = responseSettingsList.first {
+            return settings
+        }
+
+        return ResponseSettings()
+    }
+
+    private var autoApplyNaturalResponses: Bool {
+        responseSettings.autoApplyNaturalResponses
+    }
+
+    private var autoApplyConfidenceThreshold: Double {
+        responseSettings.autoApplyConfidenceThreshold
+    }
+
+    private var reviewConfidenceThreshold: Double {
+        responseSettings.reviewConfidenceThreshold
+    }
+
+    private var askClarificationWhenUncertain: Bool {
+        responseSettings.askClarificationWhenUncertain
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                headerSection
+                
+                actionSection
+                
+                llmErrorSection
+                
+                latestBriefingSection
+                
+                confirmationTasksSection
+                
+                naturalResponseSection
+                
+                todayCheckTasksSection
+                
+                briefingHistorySection
+            }
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var headerSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Briefing")
+                .font(.largeTitle)
+                .bold()
+
+            Text("계획된 할 일과 실제 활동 기록을 비교해 하루 업무를 점검합니다.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var actionSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Button("규칙 기반 아침 브리핑") {
+                    evaluateAndGenerate(.morning)
+                }
+
+                Button("규칙 기반 점심 점검") {
+                    evaluateAndGenerate(.lunch)
+                }
+
+                Button("규칙 기반 저녁 회고") {
+                    evaluateAndGenerate(.evening)
+                }
+
+                Spacer()
+
+                Button("브리핑 전체 삭제") {
+                    deleteAllBriefings()
+                }
+                .foregroundStyle(.red)
+            }
+
+            HStack {
+                Button(isGeneratingLLMBriefing ? "LLM 생성 중..." : "LLM 아침 브리핑") {
+                    Task {
+                        await generateLLMBriefing(.morning)
+                    }
+                }
+                .disabled(isGeneratingLLMBriefing)
+
+                Button(isGeneratingLLMBriefing ? "LLM 생성 중..." : "LLM 점심 점검") {
+                    Task {
+                        await generateLLMBriefing(.lunch)
+                    }
+                }
+                .disabled(isGeneratingLLMBriefing)
+
+                Button(isGeneratingLLMBriefing ? "LLM 생성 중..." : "LLM 저녁 회고") {
+                    Task {
+                        await generateLLMBriefing(.evening)
+                    }
+                }
+                .disabled(isGeneratingLLMBriefing)
+
+                Spacer()
+            }
+        }
+    }
+    
+    private var llmErrorSection: some View {
+        Group {
+            if let llmErrorMessage {
+                Text(llmErrorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .padding()
+                    .background(.quaternary)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+            }
+        }
+    }
+
+    private var latestBriefingSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("최근 브리핑")
+                .font(.title2)
+                .bold()
+
+            if let latest = briefings.first {
+                briefingCard(latest, isLatest: true)
+            } else {
+                ContentUnavailableView(
+                    "아직 생성된 브리핑이 없습니다",
+                    systemImage: "text.bubble",
+                    description: Text("아침, 점심, 저녁 브리핑 중 하나를 생성해보세요.")
+                )
+            }
+        }
+    }
+    
+    private var confirmationTasksSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("답변이 필요한 할 일")
+                .font(.title2)
+                .bold()
+
+            let confirmationTasks = tasksNeedingConfirmation
+
+            if confirmationTasks.isEmpty {
+                Text("현재 답변이 필요한 할 일이 없습니다.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(confirmationTasks) { task in
+                    confirmationTaskCard(task)
+                }
+            }
+        }
+    }
+    
+    private var naturalResponseSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("자연어 답변")
+                .font(.title2)
+                .bold()
+
+            Text("짧게 답해도 됩니다. 확실한 답변은 자동 반영하고, 애매한 답변은 다시 확인합니다.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            TextEditor(text: $naturalResponseText)
+                .frame(minHeight: 90)
+                .padding(8)
+                .background(.background)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+
+            HStack {
+                Button(isInterpretingResponse ? "처리 중..." : "답변 처리") {
+                    Task {
+                        await interpretAndRouteNaturalResponse()
+                    }
+                }
+                .disabled(
+                    isInterpretingResponse ||
+                    naturalResponseText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                )
+
+                Button("초기화") {
+                    naturalResponseText = ""
+                    appliedResponseMessages = []
+                    clarificationItems = []
+                    reviewMessages = []
+                    interpretationErrorMessage = nil
+                }
+
+                Spacer()
+            }
+
+            if let interpretationErrorMessage {
+                Text(interpretationErrorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+
+            if !appliedResponseMessages.isEmpty {
+                responseResultBox(
+                    title: "자동 반영됨",
+                    messages: appliedResponseMessages
+                )
+            }
+
+            if !reviewMessages.isEmpty {
+                responseResultBox(
+                    title: "검토 필요",
+                    messages: reviewMessages
+                )
+            }
+
+            if !clarificationItems.isEmpty {
+                clarificationSection
+            }
+        }
+        .padding()
+        .background(.quaternary)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+    
+    private func todayCheckTaskCard(_ task: TaskItem) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(task.title)
+                    .font(.headline)
+
+                Spacer()
+
+                Text(statusDisplayName(task.status))
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(.quaternary)
+                    .clipShape(Capsule())
+            }
+            
+            if let plannedStartAt = task.plannedStartAt {
+                Text("시작: \(plannedStartAt.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let dueAt = task.dueAt {
+                Text("마감: \(dueAt.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption)
+                    .foregroundStyle(isOverdue(task) ? .red : .secondary)
+            }
+
+            if let evidence = task.evidenceSummary,
+               !evidence.isEmpty {
+                Text("근거: \(evidence)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(3)
+            }
+
+            HStack {
+                Button("완료") {
+                    responseService.markCompleted(
+                        task: task,
+                        modelContext: modelContext
+                    )
+                }
+
+                Button("진행 중") {
+                    responseService.markInProgress(
+                        task: task,
+                        modelContext: modelContext
+                    )
+                }
+
+                Button("미완료") {
+                    responseService.markPending(
+                        task: task,
+                        modelContext: modelContext
+                    )
+                }
+
+                Button("내일로 넘김") {
+                    responseService.deferToTomorrow(
+                        task: task,
+                        modelContext: modelContext
+                    )
+                }
+
+                Spacer()
+            }
+            .font(.caption)
+        }
+        .padding()
+        .background(.quaternary)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+    
+    private var todayCheckTasks: [TaskItem] {
+        tasks
+            .filter { !$0.isCompleted }
+            .filter {
+                $0.status != TaskStatus.deferred.rawValue
+            }
+            .filter {
+                isDueToday($0) ||
+                $0.status == TaskStatus.pending.rawValue ||
+                $0.status == TaskStatus.inProgress.rawValue
+            }
+            .sorted { first, second in
+                let firstScore = taskPriorityScore(first)
+                let secondScore = taskPriorityScore(second)
+
+                if firstScore != secondScore {
+                    return firstScore > secondScore
+                }
+
+                return (first.dueAt ?? .distantFuture) < (second.dueAt ?? .distantFuture)
+            }
+    }
+    
+    private func isOverdue(_ task: TaskItem) -> Bool {
+        guard let dueAt = task.dueAt else {
+            return false
+        }
+
+        return !task.isCompleted && dueAt < Date()
+    }
+    
+    private var todayCheckTasksSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("오늘 점검할 할 일")
+                .font(.title2)
+                .bold()
+
+            let checkTasks = todayCheckTasks
+
+            if checkTasks.isEmpty {
+                Text("현재 오늘 점검할 할 일이 없습니다.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(checkTasks) { task in
+                    todayCheckTaskCard(task)
+                }
+            }
+        }
+    }
+    
+    private var tasksNeedingConfirmation: [TaskItem] {
+        tasks
+            .filter { !$0.isCompleted }
+            .filter {
+                $0.needsUserConfirmation ||
+                $0.status == TaskStatus.uncertain.rawValue
+            }
+            .sorted { first, second in
+                let firstScore = taskPriorityScore(first)
+                let secondScore = taskPriorityScore(second)
+
+                if firstScore != secondScore {
+                    return firstScore > secondScore
+                }
+
+                return (first.dueAt ?? Date.distantFuture) < (second.dueAt ?? Date.distantFuture)
+            }
+    }
+
+    private var briefingHistorySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("브리핑 기록")
+                .font(.title2)
+                .bold()
+
+            if briefings.isEmpty {
+                Text("아직 저장된 브리핑이 없습니다.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(briefings.dropFirst()) { briefing in
+                    briefingCard(briefing, isLatest: false)
+                }
+            }
+        }
+    }
+
+    private func briefingCard(
+        _ briefing: Briefing,
+        isLatest: Bool
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(briefing.title)
+                        .font(isLatest ? .title2 : .headline)
+                        .bold()
+
+                    Text(briefingTypeText(briefing.type))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Text(briefing.createdAt.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("브리핑 내용")
+                    .font(.headline)
+
+                Text(briefing.content)
+                    .font(.system(.body, design: .default))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
+
+            if !briefing.questions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Divider()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("확인 질문")
+                        .font(.headline)
+
+                    Text(briefing.questions)
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func evaluateAndGenerate(_ type: BriefingType) {
+        let results = evaluationService.evaluateTasks(
+            tasks: tasks,
+            activities: activities
+        )
+
+        evaluationService.applyEvaluationResults(results)
+
+        let briefing = briefingService.generateBriefing(
+            type: type,
+            tasks: tasks,
+            activities: activities,
+            snapshots: snapshots
+        )
+
+        modelContext.insert(briefing)
+    }
+
+    private func deleteAllBriefings() {
+        for briefing in briefings {
+            modelContext.delete(briefing)
+        }
+    }
+    
+    private func confirmationTaskCard(_ task: TaskItem) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(task.title)
+                    .font(.headline)
+
+                Spacer()
+
+                Text(statusDisplayName(task.status))
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(.quaternary)
+                    .clipShape(Capsule())
+            }
+
+            if let dueAt = task.dueAt {
+                Text("마감: \(dueAt.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if let evidence = task.evidenceSummary,
+               !evidence.isEmpty {
+                Text(evidence)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+
+            HStack {
+                Button("완료") {
+                    responseService.markCompleted(
+                        task: task,
+                        modelContext: modelContext
+                    )
+                }
+
+                Button("진행 중") {
+                    responseService.markInProgress(
+                        task: task,
+                        modelContext: modelContext
+                    )
+                }
+
+                Button("미완료") {
+                    responseService.markPending(
+                        task: task,
+                        modelContext: modelContext
+                    )
+                }
+
+                Button("내일로 넘김") {
+                    responseService.deferToTomorrow(
+                        task: task,
+                        modelContext: modelContext
+                    )
+                }
+
+                Spacer()
+            }
+            .font(.caption)
+        }
+        .padding()
+        .background(.quaternary)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func taskPriorityScore(_ task: TaskItem) -> Int {
+        if task.needsUserConfirmation {
+            return 100
+        }
+
+        if task.status == TaskStatus.uncertain.rawValue {
+            return 90
+        }
+
+        if let dueAt = task.dueAt {
+            if dueAt < Date() {
+                return 80
+            }
+
+            if Calendar.current.isDateInToday(dueAt) {
+                return 70
+            }
+        }
+
+        return 40
+    }
+
+    private func isDueToday(_ task: TaskItem) -> Bool {
+        guard let dueAt = task.dueAt else {
+            return false
+        }
+
+        return Calendar.current.isDateInToday(dueAt)
+    }
+
+    private func statusDisplayName(_ rawValue: String) -> String {
+        TaskStatus(rawValue: rawValue)?.displayName ?? rawValue
+    }
+    
+    private var currentLLMConfig: LLMConfig? {
+        llmConfigs.first
+    }
+
+    private func generateLLMBriefing(_ type: BriefingType) async {
+        let results = evaluationService.evaluateTasks(
+            tasks: tasks,
+            activities: activities
+        )
+
+        evaluationService.applyEvaluationResults(results)
+
+        guard let config = currentLLMConfig else {
+            llmErrorMessage = "Settings에서 LLM 설정을 먼저 저장해주세요."
+            return
+        }
+
+        isGeneratingLLMBriefing = true
+        llmErrorMessage = nil
+
+        let context = contextBuilder.buildContext(
+            type: type,
+            tasks: tasks,
+            activities: activities,
+            snapshots: snapshots,
+            userResponses: userResponses
+        )
+
+        do {
+            let content = try await llmService.generateBriefing(
+                type: type,
+                context: context,
+                config: config
+            )
+
+            let briefing = Briefing(
+                type: type.rawValue,
+                title: "\(type.displayName) · LLM",
+                content: content,
+                questions: extractQuestionSection(from: content)
+            )
+
+            modelContext.insert(briefing)
+        } catch {
+            llmErrorMessage = error.localizedDescription
+        }
+
+        isGeneratingLLMBriefing = false
+    }
+    
+    // 질문 섹션 추출 함수
+    private func extractQuestionSection(from content: String) -> String {
+        guard let range = content.range(of: "## 4. 확인 질문") else {
+            return ""
+        }
+
+        let questionPart = content[range.lowerBound...]
+
+        if let nextRange = questionPart.range(of: "## 5. 다음 행동 제안") {
+            return String(questionPart[..<nextRange.lowerBound])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return String(questionPart)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    
+    private func briefingTypeText(_ rawValue: String) -> String {
+        BriefingType(rawValue: rawValue)?.displayName ?? rawValue
+    }
+    
+    //결과박스 핼퍼
+    private func responseResultBox(
+        title: String,
+        messages: [String]
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.headline)
+
+            ForEach(messages, id: \.self) { message in
+                Text("• \(message)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.background)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+    
+    // 자연어 답변 라우팅
+    private func interpretAndRouteNaturalResponse() async {
+        guard let config = currentLLMConfig else {
+            interpretationErrorMessage = "Settings에서 LLM 설정을 먼저 저장해주세요."
+            return
+        }
+
+        isInterpretingResponse = true
+        interpretationErrorMessage = nil
+        appliedResponseMessages = []
+        clarificationItems = []
+        reviewMessages = []
+
+        do {
+            let trimmedText = naturalResponseText.trimmingCharacters(in: .whitespacesAndNewlines)
+            let isShortAmbiguous = isShortAmbiguousResponse(trimmedText)
+
+            let candidateTasks: [TaskItem]
+
+            if isShortAmbiguous {
+                if tasksNeedingConfirmation.count == 1 {
+                    candidateTasks = tasksNeedingConfirmation
+                } else if tasksNeedingConfirmation.isEmpty {
+                    let candidates = todayCheckTasks
+
+                    if candidates.isEmpty {
+                        interpretationErrorMessage = "답변을 반영할 후보 할 일이 없습니다."
+                    } else {
+                        clarificationItems = [
+                            ClarificationItem(
+                                message: "답변이 필요한 할 일이 없는 상태라서 '\(trimmedText)'를 어떤 일에 반영해야 할지 알 수 없어요.",
+                                originalResponseText: trimmedText,
+                                suggestedStatus: nil,
+                                candidateTasks: candidates,
+                                type: .selectTask
+                            )
+                        ]
+                    }
+
+                    isInterpretingResponse = false
+                    return
+                } else {
+                    clarificationItems = [
+                        ClarificationItem(
+                            message: "어떤 할 일에 대한 답변인지 알려주세요. 답변이 필요한 할 일이 여러 개 있어요.",
+                            originalResponseText: trimmedText,
+                            suggestedStatus: nil,
+                            candidateTasks: tasksNeedingConfirmation,
+                            type: .selectTask
+                        )
+                    ]
+
+                    isInterpretingResponse = false
+                    return
+                }
+            } else {
+                candidateTasks = uniqueTasks(
+                    tasksNeedingConfirmation + todayCheckTasks
+                )
+            }
+
+            guard !candidateTasks.isEmpty else {
+                interpretationErrorMessage = "답변을 반영할 후보 할 일이 없습니다."
+                isInterpretingResponse = false
+                return
+            }
+
+            let interpretations = try await llmService.interpretTaskResponse(
+                userText: naturalResponseText,
+                tasks: candidateTasks,
+                config: config
+            )
+
+            if interpretations.isEmpty {
+                interpretationErrorMessage = "반영할 할 일을 찾지 못했어요. 할 일 이름을 조금 더 구체적으로 적어주세요."
+                isInterpretingResponse = false
+                return
+            }
+
+            routeInterpretations(
+                interpretations,
+                candidateTasks: candidateTasks
+            )
+
+            naturalResponseText = ""
+        } catch {
+            interpretationErrorMessage = error.localizedDescription
+        }
+
+        isInterpretingResponse = false
+    }
+    
+    // 브리핑ㅇ 해석 결과 라우팅
+    private func routeInterpretations(
+        _ interpretations: [TaskResponseInterpretation],
+        candidateTasks: [TaskItem]
+    ) {
+        var applied: [String] = []
+        var clarification: [ClarificationItem] = []
+        var review: [String] = []
+
+        for interpretation in interpretations {
+            guard let matchedTask = findTask(
+                for: interpretation,
+                in: candidateTasks
+            ) else {
+                clarification.append(
+                    ClarificationItem(
+                        message: "어떤 할 일에 대한 답변인지 찾지 못했어요.",
+                        originalResponseText: interpretation.responseText,
+                        suggestedStatus: interpretation.status,
+                        candidateTasks: candidateTasks,
+                        type: .selectTask
+                    )
+                )
+                continue
+            }
+
+            if interpretation.needsClarification && askClarificationWhenUncertain {
+                let question = interpretation.clarificationQuestion ?? "\(matchedTask.title)에 대한 답변이 맞나요?"
+
+                clarification.append(
+                    ClarificationItem(
+                        message: question,
+                        originalResponseText: interpretation.responseText,
+                        suggestedStatus: interpretation.status,
+                        candidateTasks: candidateTasks,
+                        type: .selectTask
+                    )
+                )
+                continue
+            }
+
+            if interpretation.confidence >= autoApplyConfidenceThreshold &&
+                autoApplyNaturalResponses {
+                responseService.applyInterpretation(
+                    interpretation,
+                    to: matchedTask,
+                    modelContext: modelContext
+                )
+
+                applied.append(
+                    "\(matchedTask.title): \(interpretation.status.displayName)로 반영"
+                )
+                continue
+            }
+
+            if interpretation.confidence >= reviewConfidenceThreshold {
+                review.append(
+                    "\(matchedTask.title): \(interpretation.status.displayName)로 보이지만 확신도가 낮아요. 직접 버튼으로 확정해주세요. confidence \(String(format: "%.2f", interpretation.confidence))"
+                )
+            } else {
+                let question = interpretation.clarificationQuestion ?? "\(matchedTask.title)의 상태를 다시 알려주세요."
+
+                clarification.append(
+                    ClarificationItem(
+                        message: question,
+                        originalResponseText: interpretation.responseText,
+                        suggestedStatus: interpretation.status,
+                        candidateTasks: [matchedTask],
+                        type: .selectStatus
+                    )
+                )
+            }
+        }
+
+        appliedResponseMessages = applied
+        clarificationItems = clarification
+        reviewMessages = review
+
+        if applied.isEmpty && clarification.isEmpty && review.isEmpty {
+            interpretationErrorMessage = "처리할 수 있는 답변을 찾지 못했어요."
+        }
+    }
+    
+    // task 매칭 핼퍼
+    private func findTask(
+        for interpretation: TaskResponseInterpretation,
+        in candidateTasks: [TaskItem]
+    ) -> TaskItem? {
+        let target = interpretation.taskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let exact = candidateTasks.first(where: { $0.title == target }) {
+            return exact
+        }
+
+        return candidateTasks.first { task in
+            task.title.localizedCaseInsensitiveContains(target) ||
+            target.localizedCaseInsensitiveContains(task.title)
+        }
+    }
+
+    private func uniqueTasks(_ input: [TaskItem]) -> [TaskItem] {
+        var seen = Set<String>()
+        var result: [TaskItem] = []
+
+        for task in input {
+            let key = "\(task.title)|\(task.createdAt.timeIntervalSince1970)"
+
+            if seen.contains(key) {
+                continue
+            }
+
+            seen.insert(key)
+            result.append(task)
+        }
+
+        return result
+    }
+    
+    // 짧은 답변 판별 함수.. 일단 어케 처리하는지 ㅁㄹ서 이거 함수로 처리함..
+    private func isShortAmbiguousResponse(_ text: String) -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let shortResponses = [
+            "했어",
+            "했어요",
+            "완료",
+            "완료했어",
+            "끝",
+            "끝냈어",
+            "아직",
+            "안했어",
+            "안 했어",
+            "미완료",
+            "진행중",
+            "진행 중",
+            "내일",
+            "내일할게",
+            "내일 할게",
+            "나중에"
+        ]
+
+        if shortResponses.contains(trimmed) {
+            return true
+        }
+
+        return trimmed.count <= 4
+    }
+    
+    private var clarificationSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("역질문")
+                .font(.headline)
+
+            ForEach(clarificationItems) { item in
+                clarificationCard(item)
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.background)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+    
+    private func clarificationCard(_ item: ClarificationItem) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(item.message)
+                .font(.subheadline)
+                .bold()
+
+            Text("사용자 답변: \(item.originalResponseText)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if item.type == .selectTask {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("어떤 할 일에 대한 답변인가요?")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    ForEach(item.candidateTasks) { task in
+                        Button {
+                            handleClarificationTaskSelected(
+                                task,
+                                item: item
+                            )
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(task.title)
+                                        .font(.headline)
+
+                                    Text(statusDisplayName(task.status))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                Spacer()
+
+                                Image(systemName: "chevron.right")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .padding(8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.quaternary)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            if item.type == .selectStatus,
+               let firstTask = item.candidateTasks.first {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("이 할 일의 상태를 선택해주세요.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    HStack {
+                        Button("완료") {
+                            responseService.markCompleted(
+                                task: firstTask,
+                                modelContext: modelContext
+                            )
+                            removeClarificationItem(item)
+                        }
+
+                        Button("진행 중") {
+                            responseService.markInProgress(
+                                task: firstTask,
+                                modelContext: modelContext
+                            )
+                            removeClarificationItem(item)
+                        }
+
+                        Button("미완료") {
+                            responseService.markPending(
+                                task: firstTask,
+                                modelContext: modelContext
+                            )
+                            removeClarificationItem(item)
+                        }
+
+                        Button("내일로 넘김") {
+                            responseService.deferToTomorrow(
+                                task: firstTask,
+                                modelContext: modelContext
+                            )
+                            removeClarificationItem(item)
+                        }
+
+                        Spacer()
+                    }
+                    .font(.caption)
+                }
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+    
+    // Task선택했을 때 처리하는 함수
+    private func handleClarificationTaskSelected(
+        _ task: TaskItem,
+        item: ClarificationItem
+    ) {
+        if let suggestedStatus = item.suggestedStatus {
+            let interpretation = TaskResponseInterpretation(
+                taskTitle: task.title,
+                status: suggestedStatus,
+                responseText: item.originalResponseText,
+                deferredTo: suggestedStatus == .deferred
+                    ? Calendar.current.date(byAdding: .day, value: 1, to: Date())
+                    : nil,
+                confidence: 1.0,
+                needsClarification: false,
+                clarificationQuestion: nil
+            )
+
+            responseService.applyInterpretation(
+                interpretation,
+                to: task,
+                modelContext: modelContext
+            )
+
+            appliedResponseMessages.append(
+                "\(task.title): \(suggestedStatus.displayName)로 반영"
+            )
+
+            removeClarificationItem(item)
+        } else {
+            let newItem = ClarificationItem(
+                message: "\(task.title)의 상태를 선택해주세요.",
+                originalResponseText: item.originalResponseText,
+                suggestedStatus: nil,
+                candidateTasks: [task],
+                type: .selectStatus
+            )
+
+            clarificationItems.removeAll { $0.id == item.id }
+            clarificationItems.append(newItem)
+        }
+    }
+    
+    private func removeClarificationItem(_ item: ClarificationItem) {
+        clarificationItems.removeAll { $0.id == item.id }
+    }
+}
