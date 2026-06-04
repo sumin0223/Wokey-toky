@@ -43,13 +43,13 @@ final class KakaoTalkService {
     }
 
     func fetchMessages(
-        chatName: String,
+        chatId: String,
         since: String = "1d"
     ) async throws -> [KakaoTalkMessageItem] {
-        let escapedChatName = shellEscape(chatName)
+        let escapedChatId = shellEscape(chatId)
         let escapedSince = shellEscape(since)
 
-        let command = "\(shellEscape(pythonPath)) \(shellEscape(helperPath)) messages --chat \(escapedChatName) --since \(escapedSince) --json"
+        let command = "\(shellEscape(pythonPath)) \(shellEscape(helperPath)) messages --chat-id \(escapedChatId) --since \(escapedSince) --json"
 
         let output = try await runCommand(
             launchPath: "/bin/zsh",
@@ -110,12 +110,22 @@ final class KakaoTalkService {
 
         if let array = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
             return array.compactMap { item in
+                guard let chatId = chatRoomId(from: item) else {
+                    return nil
+                }
+
                 let names = chatRoomNames(from: item)
 
+                let displayName = displayNameForChatRoom(
+                    rawName: names.displayName,
+                    chatId: chatId,
+                    item: item
+                )
+
                 return KakaoTalkChatRoom(
-                    name: names.displayName,
+                    name: displayName,
                     rawDescription: String(describing: item),
-                    lookupName: names.lookupName
+                    lookupName: chatId
                 )
             }
         }
@@ -187,6 +197,76 @@ final class KakaoTalkService {
         }
 
         return ("이름 없는 채팅방", lookupName)
+    }
+    
+    private func chatRoomId(from item: [String: Any]) -> String? {
+        if let id = item["id"] as? String {
+            return id
+        }
+
+        if let id = item["id"] as? Int {
+            return String(id)
+        }
+
+        if let id = item["id"] as? Int64 {
+            return String(id)
+        }
+
+        if let id = item["id"] as? NSNumber {
+            return id.stringValue
+        }
+
+        if let id = item["chat_id"] as? String {
+            return id
+        }
+
+        if let id = item["chat_id"] as? Int {
+            return String(id)
+        }
+
+        if let id = item["chat_id"] as? Int64 {
+            return String(id)
+        }
+
+        if let id = item["chat_id"] as? NSNumber {
+            return id.stringValue
+        }
+
+        return nil
+    }
+    
+    // unknown 표시 정리용
+    private func displayNameForChatRoom(
+        rawName: String,
+        chatId: String,
+        item: [String: Any]
+    ) -> String {
+        if let alias = KakaoTalkChatAliasStore.alias(for: chatId) {
+            return alias
+        }
+
+        let trimmed = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowered = trimmed.lowercased()
+
+        let isUnknown =
+            trimmed.isEmpty ||
+            lowered == "unknown" ||
+            lowered == "(unknown)" ||
+            lowered == "null"
+
+        if isUnknown {
+            if let memberCount = item["member_count"] as? Int {
+                return "이름 확인 필요 · \(memberCount)명"
+            }
+
+            if let memberCount = item["member_count"] as? NSNumber {
+                return "이름 확인 필요 · \(memberCount.intValue)명"
+            }
+
+            return "이름 확인 필요"
+        }
+
+        return trimmed
     }
 
     private func fallbackChatIdentifier(from item: [String: Any]) -> String? {

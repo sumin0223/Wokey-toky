@@ -511,7 +511,7 @@ struct KakaoTalkImportView: View {
         for room in selectedChatRooms {
             do {
                 let roomMessages = try await kakaoService.fetchMessages(
-                    chatName: room.lookupName,
+                    chatId: room.lookupName,
                     since: since
                 )
 
