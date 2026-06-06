@@ -22,6 +22,12 @@ final class TaskItem {
     var status: String
 
     var isCompleted: Bool
+    
+    // scheduleType: task / event
+    var scheduleType: String?
+
+    // PC 작업 여부. event는 보통 false, task는 사용자가 선택
+    var requiresPCWork: Bool?
 
     // 캘린더 일정 시작 시간
     var plannedStartAt: Date?
@@ -54,6 +60,8 @@ final class TaskItem {
         projectName: String? = nil,
         status: String = "pending",
         isCompleted: Bool = false,
+        scheduleType: String = "task",
+        requiresPCWork: Bool = true,
         plannedStartAt: Date? = nil,
         dueAt: Date? = nil,
         evidenceSummary: String? = nil,
@@ -70,6 +78,8 @@ final class TaskItem {
         self.projectName = projectName
         self.status = status
         self.isCompleted = isCompleted
+        self.scheduleType = scheduleType
+        self.requiresPCWork = requiresPCWork
         self.plannedStartAt = plannedStartAt
         self.dueAt = dueAt
         self.evidenceSummary = evidenceSummary
