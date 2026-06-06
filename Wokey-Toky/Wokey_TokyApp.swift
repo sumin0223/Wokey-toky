@@ -42,6 +42,7 @@ struct Wokey_TokyApp: App {
                 configurations: [modelConfiguration]
             )
         } catch {
+            print("ModelContainer Error:", error)
             fatalError("Could not create ModelContainer: \(error)")
         }
     }()
