@@ -349,6 +349,7 @@ struct BriefingView: View {
     private var todayCheckTasks: [TaskItem] {
         tasks
             .filter { !$0.isCompleted }
+            .filter { scheduleType($0) == .task }
             .filter {
                 $0.status != TaskStatus.deferred.rawValue
             }
@@ -399,6 +400,7 @@ struct BriefingView: View {
     private var tasksNeedingConfirmation: [TaskItem] {
         tasks
             .filter { !$0.isCompleted }
+            .filter { scheduleType($0) == .task }
             .filter {
                 $0.needsUserConfirmation ||
                 $0.status == TaskStatus.uncertain.rawValue
@@ -614,6 +616,10 @@ struct BriefingView: View {
 
     private func statusDisplayName(_ rawValue: String) -> String {
         TaskStatus(rawValue: rawValue)?.displayName ?? rawValue
+    }
+
+    private func scheduleType(_ task: TaskItem) -> ScheduleType {
+        ScheduleType(rawValue: task.scheduleType ?? "") ?? .task
     }
     
     private var currentLLMConfig: LLMConfig? {
