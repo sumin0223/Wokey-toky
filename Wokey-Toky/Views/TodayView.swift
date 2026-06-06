@@ -9,6 +9,7 @@ import SwiftUI
 import SwiftData
 
 struct TodayView: View {
+    @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var captureManager: ContextCaptureManager
 
     @Query(sort: \ActivityEvent.startedAt, order: .reverse)
@@ -16,446 +17,565 @@ struct TodayView: View {
 
     @Query(sort: \ScreenContextSnapshot.capturedAt, order: .reverse)
     private var snapshots: [ScreenContextSnapshot]
-    
+
     @Query(sort: \TaskItem.createdAt, order: .reverse)
     private var tasks: [TaskItem]
-    
+
     @Query(sort: \Briefing.createdAt, order: .reverse)
     private var briefings: [Briefing]
-    
-    @Query(sort: \DailySummary.createdAt, order: .reverse)
-    private var summaries: [DailySummary]
-    
-    @Query(sort: \Suggestion.createdAt, order: .reverse)
-    private var suggestions: [Suggestion]
+
+    @State private var selectedProgress: TodayProgressKind?
+    @State private var isActionPillExpanded = false
+    @State private var toastMessage: String?
+
+    private let briefingService = BriefingService()
+    private let evaluationService = TaskEvaluationService()
+    private let responseService = TaskResponseService()
+
+    private let briefingSlots: [TodayBriefingSlot] = [
+        TodayBriefingSlot(type: .morning, title: "아침", hour: 8, minute: 0),
+        TodayBriefingSlot(type: .lunch, title: "점심", hour: 13, minute: 0),
+        TodayBriefingSlot(type: .evening, title: "저녁", hour: 19, minute: 0)
+    ]
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 34) {
                 headerSection
+                progressSection
 
-                statusSection
+                if let selectedProgress {
+                    progressDetailSection(selectedProgress)
+                }
 
-                statsSection
-
-                recentActivitySection
-
-                recentScreenContextSection
-                
-                tasksSection
-                
                 briefingSection
-                
-                summarySection
-
-                suggestionSection
+                    .padding(.bottom, 92)
             }
-            .padding()
+            .padding(WokeyDesign.pagePadding)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .navigationTitle("Today")
+        .overlay(alignment: .top) {
+            if let toastMessage {
+                InAppToastView(message: toastMessage)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            floatingActionPill
+                .padding(.horizontal, 28)
+                .padding(.bottom, 22)
+        }
     }
 
     private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("오늘의 작업")
-                .font(.largeTitle)
-                .bold()
+        HStack(alignment: .top, spacing: 24) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Today")
+                    .font(.largeTitle)
+                    .bold()
+                    .foregroundStyle(WokeyDesign.ink)
 
-            Text(Date().formatted(date: .complete, time: .omitted))
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var statusSection: some View {
-        HStack {
-            Circle()
-                .frame(width: 10, height: 10)
-                .foregroundStyle(captureManager.isCapturing ? .green : .gray)
-
-            Text(captureManager.isCapturing ? "자동 수집 중" : "자동 수집 꺼짐")
-                .font(.headline)
+                Text(Date().formatted(date: .complete, time: .omitted))
+                    .font(.subheadline)
+                    .foregroundStyle(WokeyDesign.muted)
+            }
 
             Spacer()
-        }
-        .padding()
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-    }
 
-    private var statsSection: some View {
-        HStack(spacing: 16) {
-            statCard(
-                title: "활동 기록",
-                value: "\(todayActivities.count)",
-                subtitle: "focus 앱 전환"
-            )
+            VStack(alignment: .trailing, spacing: 10) {
+                HStack(spacing: 8) {
+                    Circle()
+                        .frame(width: 9, height: 9)
+                        .foregroundStyle(captureManager.isCapturing ? WokeyDesign.active : WokeyDesign.muted)
 
-            statCard(
-                title: "화면 기록",
-                value: "\(todaySnapshots.count)",
-                subtitle: "화면 맥락 스냅샷"
-            )
+                    Text(captureManager.isCapturing ? "자동 수집 중" : "자동 수집 꺼짐")
+                        .font(.caption)
+                        .foregroundStyle(WokeyDesign.muted)
+                }
 
-            statCard(
-                title: "최근 앱",
-                value: latestActivity?.appName ?? "-",
-                subtitle: "마지막 focus"
-            )
+                Button("상태 새로고침") {
+                    refreshTaskEvaluation()
+                }
+                .buttonStyle(.bordered)
+            }
         }
     }
 
-    private func statCard(
-        title: String,
-        value: String,
-        subtitle: String
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Text(value)
+    private var progressSection: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("진행 상황")
                 .font(.title2)
                 .bold()
-                .lineLimit(1)
+                .foregroundStyle(WokeyDesign.ink)
 
-            Text(subtitle)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+            HStack(spacing: 18) {
+                progressCard(
+                    kind: .completed,
+                    title: "완료",
+                    value: todayCompletedTasks.count
+                )
+
+                progressCard(
+                    kind: .inProgress,
+                    title: "진행 중",
+                    value: todayInProgressTasks.count
+                )
+
+                progressCard(
+                    kind: .needsConfirmation,
+                    title: "확인 필요",
+                    value: tasksNeedingConfirmation.count
+                )
+            }
+        }
+    }
+
+    private func progressCard(
+        kind: TodayProgressKind,
+        title: String,
+        value: Int
+    ) -> some View {
+        Button {
+            withAnimation(.snappy(duration: 0.2)) {
+                selectedProgress = selectedProgress == kind ? nil : kind
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 14) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(WokeyDesign.muted)
+
+                Text("\(value)")
+                    .font(.title2)
+                    .bold()
+                    .foregroundStyle(WokeyDesign.ink)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 20)
+            .frame(maxWidth: .infinity, minHeight: 110, alignment: .leading)
+            .background(selectedProgress == kind ? WokeyDesign.statusFill : WokeyDesign.quietFill)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(selectedProgress == kind ? WokeyDesign.muted.opacity(0.35) : .clear, lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func progressDetailSection(_ kind: TodayProgressKind) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(kind.title)
+                .font(.headline)
+                .foregroundStyle(WokeyDesign.ink)
+
+            let rows = progressTasks(for: kind)
+
+            if rows.isEmpty {
+                Text(kind.emptyText)
+                    .font(.subheadline)
+                    .foregroundStyle(WokeyDesign.muted)
+                    .frame(maxWidth: .infinity, minHeight: 80, alignment: .leading)
+            } else {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    ForEach(rows) { task in
+                        progressTaskRow(task, kind: kind)
+                    }
+                }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .wokeyPanel()
     }
 
-    private var recentActivitySection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("최근 활동")
-                .font(.title2)
-                .bold()
+    private func progressTaskRow(
+        _ task: TaskItem,
+        kind: TodayProgressKind
+    ) -> some View {
+        HStack(alignment: .center, spacing: 14) {
+            Image(systemName: kind.systemImage)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(WokeyDesign.blue)
+                .frame(width: 24)
 
-            if todayActivities.isEmpty {
-                Text("아직 오늘 활동 기록이 없습니다.")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(todayActivities.prefix(5)) { activity in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(activity.appName)
-                            .font(.headline)
-
-                        if let windowTitle = activity.windowTitle,
-                           !windowTitle.isEmpty {
-                            Text(windowTitle)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Text(activityTimeRangeText(activity))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 4)
-                }
-            }
-        }
-        .padding()
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-    }
-
-    private var recentScreenContextSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("최근 화면 맥락")
-                .font(.title2)
-                .bold()
-
-            if let snapshot = todaySnapshots.first {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(snapshot.capturedAt.formatted(date: .omitted, time: .standard))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    if let primaryAppName = snapshot.primaryAppName {
-                        Text("Primary: \(primaryAppName)")
-                            .font(.headline)
-                    }
-
-                    let windows = sortedWindows(snapshot.windows)
-
-                    ForEach(windows.prefix(5)) { window in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(window.appName)
-                                    .font(.subheadline)
-                                    .bold()
-
-                                if !window.windowTitle.isEmpty {
-                                    Text(window.windowTitle)
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                }
-                            }
-
-                            Spacer()
-
-                            Text(window.classification)
-                                .font(.caption2)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(.quaternary)
-                                .clipShape(Capsule())
-                        }
-                    }
-                }
-            } else {
-                Text("아직 화면 맥락 기록이 없습니다.")
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding()
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-    }
-    
-    private var tasksSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("오늘 점검할 할 일")
-                .font(.title2)
-                .bold()
-
-            let visibleTasks = prioritizedTasks
-
-            if visibleTasks.isEmpty {
-                Text("아직 점검할 할 일이 없습니다.")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(visibleTasks.prefix(5)) { task in
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text(task.title)
-                                .font(.headline)
-
-                            Spacer()
-
-                            Text(statusDisplayName(task.status))
-                                .font(.caption2)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(.quaternary)
-                                .clipShape(Capsule())
-                        }
-
-                        if let plannedStartAt = task.plannedStartAt {
-                            Text("시작: \(plannedStartAt.formatted(date: .abbreviated, time: .shortened))")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        if let dueAt = task.dueAt {
-                            Text("마감: \(dueAt.formatted(date: .abbreviated, time: .shortened))")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        if let evidence = task.evidenceSummary,
-                           !evidence.isEmpty {
-                            Text("근거: \(evidence)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-            }
-        }
-        .padding()
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-    }
-    
-    private var briefingSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("최근 브리핑")
-                .font(.title2)
-                .bold()
-
-            if let latest = briefings.first {
-                Text(latest.title)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(task.title)
                     .font(.headline)
+                    .foregroundStyle(WokeyDesign.ink)
+                    .lineLimit(1)
 
-                Text(latest.content)
-                    .font(.body)
-                    .lineLimit(6)
-
-                if !latest.questions.isEmpty {
-                    Divider()
-
-                    Text("확인 질문")
-                        .font(.headline)
-
-                    Text(latest.questions)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(4)
-                }
-
-                Text(latest.createdAt.formatted(date: .abbreviated, time: .shortened))
+                Text(taskCaption(task))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("아직 생성된 브리핑이 없습니다.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            if kind == .needsConfirmation {
+                HStack(spacing: 8) {
+                    Button("완료") {
+                        markCompleted(task)
+                    }
+
+                    Button("진행 중") {
+                        markInProgress(task)
+                    }
+
+                    Button("내일로 넘김") {
+                        deferToTomorrow(task)
+                    }
+                }
+                .buttonStyle(.bordered)
+            } else if kind == .completed {
+                Text(task.completedAt?.formatted(date: .omitted, time: .shortened) ?? "완료")
+                    .font(.caption)
+                    .foregroundStyle(WokeyDesign.muted)
             }
         }
-        .padding()
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(WokeyDesign.quietFill)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
-    
-    private var summarySection: some View {
+
+
+    private var floatingActionPill: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if isActionPillExpanded {
+                floatingActionExpandedContent
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
+            Button {
+                withAnimation(.snappy(duration: 0.22)) {
+                    isActionPillExpanded.toggle()
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: isActionPillExpanded ? "chevron.down.circle.fill" : "chevron.up.circle.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(WokeyDesign.blue)
+
+                    Text("확인 필요 \(tasksNeedingConfirmation.count)")
+                        .font(.headline)
+                        .foregroundStyle(WokeyDesign.ink)
+
+                    Text("·")
+                        .foregroundStyle(WokeyDesign.muted)
+
+                    Text("오늘 점검 \(todayCheckTasks.count)")
+                        .font(.headline)
+                        .foregroundStyle(WokeyDesign.ink)
+
+                    if let firstQuestionTask = tasksNeedingConfirmation.first {
+                        Text("·")
+                            .foregroundStyle(WokeyDesign.muted)
+
+                        Text(firstQuestionTask.title)
+                            .font(.subheadline)
+                            .foregroundStyle(WokeyDesign.muted)
+                            .lineLimit(1)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
+                .frame(maxWidth: 760, minHeight: 52)
+                .background(.ultraThinMaterial)
+                .clipShape(Capsule())
+                .overlay {
+                    Capsule()
+                        .stroke(WokeyDesign.hairline, lineWidth: 1)
+                }
+                .shadow(color: Color.black.opacity(0.12), radius: 18, x: 0, y: 8)
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+    }
+
+    private var floatingActionExpandedContent: some View {
+        HStack(alignment: .top, spacing: 18) {
+            floatingTodayCheckWidget
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+
+            floatingConfirmationWidget
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .padding(18)
+        .frame(maxWidth: 760, alignment: .leading)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(WokeyDesign.hairline, lineWidth: 1)
+        }
+        .shadow(color: Color.black.opacity(0.10), radius: 18, x: 0, y: 8)
+        .padding(.bottom, 10)
+    }
+
+    private var floatingTodayCheckWidget: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("오늘 요약")
+            HStack {
+                Text("오늘 점검")
+                    .font(.headline)
+                    .foregroundStyle(WokeyDesign.ink)
+
+                Spacer()
+
+                Text("\(todayCheckTasks.count)개")
+                    .font(.caption)
+                    .foregroundStyle(WokeyDesign.muted)
+            }
+
+            if todayCheckTasks.isEmpty {
+                Text("점검할 할 일이 없습니다.")
+                    .font(.caption)
+                    .foregroundStyle(WokeyDesign.muted)
+                    .frame(maxWidth: .infinity, minHeight: 74, alignment: .topLeading)
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(todayCheckTasks.prefix(3)) { task in
+                        HStack(alignment: .top, spacing: 8) {
+                            Circle()
+                                .fill(WokeyDesign.mint)
+                                .frame(width: 6, height: 6)
+                                .padding(.top, 6)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(task.title)
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundStyle(WokeyDesign.ink)
+                                    .lineLimit(1)
+
+                                Text(taskCaption(task))
+                                    .font(.caption2)
+                                    .foregroundStyle(WokeyDesign.muted)
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
+
+                    if todayCheckTasks.count > 3 {
+                        Text("+\(todayCheckTasks.count - 3)개 더 있음")
+                            .font(.caption)
+                            .foregroundStyle(WokeyDesign.muted)
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(WokeyDesign.panel.opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private var floatingConfirmationWidget: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("확인 필요")
+                    .font(.headline)
+                    .foregroundStyle(WokeyDesign.ink)
+
+                Spacer()
+
+                Text("\(tasksNeedingConfirmation.count)개")
+                    .font(.caption)
+                    .foregroundStyle(WokeyDesign.muted)
+            }
+
+            if let task = tasksNeedingConfirmation.first {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(questionText(for: task))
+                        .font(.subheadline)
+                        .foregroundStyle(WokeyDesign.ink)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 8) {
+                        Button("완료") {
+                            markCompleted(task)
+                        }
+
+                        Button("진행 중") {
+                            markInProgress(task)
+                        }
+
+                        Button("내일로") {
+                            deferToTomorrow(task)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .font(.caption)
+
+                    if tasksNeedingConfirmation.count > 1 {
+                        Text("+\(tasksNeedingConfirmation.count - 1)개 더 있음")
+                            .font(.caption)
+                            .foregroundStyle(WokeyDesign.muted)
+                    }
+                }
+            } else {
+                Text("확인할 질문이 없습니다.")
+                    .font(.caption)
+                    .foregroundStyle(WokeyDesign.muted)
+                    .frame(maxWidth: .infinity, minHeight: 74, alignment: .topLeading)
+            }
+        }
+        .padding(14)
+        .background(WokeyDesign.panel.opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private var briefingSection: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("브리핑")
                 .font(.title2)
                 .bold()
+                .foregroundStyle(WokeyDesign.ink)
 
-            if let summary = todaySummary {
-                Text(summary.content)
+            VStack(alignment: .leading, spacing: 14) {
+                ForEach(briefingSlots) { slot in
+                    briefingCard(slot)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func briefingCard(_ slot: TodayBriefingSlot) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text("\(slot.title) 브리핑")
+                    .font(.headline)
+                    .foregroundStyle(WokeyDesign.ink)
+
+                Text(slot.timeText)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(WokeyDesign.muted)
+
+                Spacer()
+            }
+
+            if let briefing = todayBriefing(for: slot.type) {
+                Text(briefing.content)
                     .font(.body)
+                    .foregroundStyle(WokeyDesign.ink)
                     .lineLimit(8)
                     .textSelection(.enabled)
 
-                Text("업데이트: \(summary.updatedAt.formatted(date: .omitted, time: .shortened))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("아직 저장된 오늘 요약이 없습니다. Summary 화면에서 요약을 생성해보세요.")
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding()
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-    }
+                if !briefing.questions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Divider()
 
-    private var suggestionSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("제안")
-                .font(.title2)
-                .bold()
+                    Text(briefing.questions)
+                        .font(.caption)
+                        .foregroundStyle(WokeyDesign.muted)
+                        .lineLimit(4)
+                        .textSelection(.enabled)
+                }
+            } else if slot.isDueNow {
+                HStack(alignment: .center, spacing: 12) {
+                    Text("아직 생성된 브리핑이 없습니다.")
+                        .font(.subheadline)
+                        .foregroundStyle(WokeyDesign.muted)
 
-            let activeSuggestions = suggestions.filter { !$0.isDismissed }
+                    Spacer()
 
-            if activeSuggestions.isEmpty {
-                Text(ruleBasedSuggestion)
-                    .font(.body)
-                    .foregroundStyle(.primary)
-            } else {
-                ForEach(activeSuggestions.prefix(3)) { suggestion in
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text(suggestion.title)
-                                .font(.headline)
-
-                            Spacer()
-
-                            Text(suggestion.type)
-                                .font(.caption2)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(.quaternary)
-                                .clipShape(Capsule())
-                        }
-
-                        Text(suggestion.message)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
+                    Button("\(slot.title) 브리핑 생성") {
+                        generateBriefing(slot.type)
                     }
-                    .padding(.vertical, 4)
+                    .buttonStyle(.bordered)
                 }
+                .frame(maxWidth: .infinity, minHeight: 82, alignment: .center)
+            } else {
+                Text("\(slot.scheduledText) 이후 생성 가능")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(WokeyDesign.muted)
+                    .frame(maxWidth: .infinity, minHeight: 82, alignment: .center)
             }
         }
-        .padding()
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding(24)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(WokeyDesign.statusFill)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    private var todayActivities: [ActivityEvent] {
-        activities.filter { Calendar.current.isDateInToday($0.startedAt) }
-    }
-
-    private var todaySnapshots: [ScreenContextSnapshot] {
-        snapshots.filter { Calendar.current.isDateInToday($0.capturedAt) }
-    }
-
-    private var latestActivity: ActivityEvent? {
-        todayActivities.first
-    }
-
-    private var ruleBasedSuggestion: String {
-        if !captureManager.isCapturing {
-            return "자동 수집을 시작하면 오늘 작업 흐름과 화면 맥락을 기록할 수 있어요."
-        }
-
-        if todayActivities.isEmpty && todaySnapshots.isEmpty {
-            return "수집은 켜져 있지만 아직 기록이 거의 없어요. Xcode, Safari, Finder 같은 작업 창을 오가며 테스트해보세요."
-        }
-
-        if let latestActivity {
-            return "최근에는 \(latestActivity.appName)을 사용 중이에요. 작업이 어느 정도 쌓이면 오늘 요약을 생성할 수 있게 만들 예정입니다."
-        }
-
-        return "오늘 작업 기록을 바탕으로 다음 행동을 제안할 수 있게 준비 중입니다."
-    }
-
-    private func activityTimeRangeText(_ event: ActivityEvent) -> String {
-        let start = event.startedAt.formatted(date: .omitted, time: .shortened)
-
-        if let endedAt = event.endedAt {
-            let end = endedAt.formatted(date: .omitted, time: .shortened)
-            return "\(start) - \(end)"
-        } else {
-            return "\(start) - 현재"
+    private func progressTasks(for kind: TodayProgressKind) -> [TaskItem] {
+        switch kind {
+        case .completed:
+            return todayCompletedTasks
+        case .inProgress:
+            return todayInProgressTasks
+        case .needsConfirmation:
+            return tasksNeedingConfirmation
         }
     }
 
-    private func sortedWindows(_ windows: [VisibleWindowRecord]) -> [VisibleWindowRecord] {
-        windows.sorted { first, second in
-            if first.classification == "primary" {
-                return true
-            }
-
-            if second.classification == "primary" {
-                return false
-            }
-
-            return first.screenShare > second.screenShare
-        }
-    }
-    
-    private var todaySummary: DailySummary? {
-        summaries.first {
-            Calendar.current.isDateInToday($0.date)
-        }
-    }
-    
-    private var prioritizedTasks: [TaskItem] {
+    private var todayCompletedTasks: [TaskItem] {
         tasks
-            .filter { !$0.isCompleted }
-            .sorted { first, second in
-                let firstScore = taskPriorityScore(first)
-                let secondScore = taskPriorityScore(second)
-
-                if firstScore != secondScore {
-                    return firstScore > secondScore
+            .filter { scheduleType($0) == .task }
+            .filter {
+                guard let completedAt = $0.completedAt else {
+                    return false
                 }
 
-                return (first.dueAt ?? .distantFuture) < (second.dueAt ?? .distantFuture)
+                return $0.isCompleted && Calendar.current.isDateInToday(completedAt)
             }
+            .sorted {
+                ($0.completedAt ?? .distantPast) > ($1.completedAt ?? .distantPast)
+            }
+    }
+
+    private var todayInProgressTasks: [TaskItem] {
+        tasks
+            .filter {
+                !$0.isCompleted &&
+                scheduleType($0) == .task &&
+                $0.status == TaskStatus.inProgress.rawValue
+            }
+            .sorted(by: taskSort)
+    }
+
+    private var tasksNeedingConfirmation: [TaskItem] {
+        tasks
+            .filter {
+                !$0.isCompleted &&
+                scheduleType($0) == .task &&
+                ($0.needsUserConfirmation || $0.status == TaskStatus.uncertain.rawValue)
+            }
+            .sorted(by: taskSort)
+    }
+
+    private var todayCheckTasks: [TaskItem] {
+        tasks
+            .filter {
+                !$0.isCompleted &&
+                scheduleType($0) == .task &&
+                $0.status != TaskStatus.deferred.rawValue
+            }
+            .filter {
+                isDueToday($0) ||
+                $0.status == TaskStatus.pending.rawValue ||
+                $0.status == TaskStatus.inProgress.rawValue ||
+                $0.status == TaskStatus.uncertain.rawValue ||
+                $0.needsUserConfirmation
+            }
+            .sorted(by: taskSort)
+    }
+
+    private func taskSort(_ first: TaskItem, _ second: TaskItem) -> Bool {
+        let firstScore = taskPriorityScore(first)
+        let secondScore = taskPriorityScore(second)
+
+        if firstScore != secondScore {
+            return firstScore > secondScore
+        }
+
+        return (first.dueAt ?? .distantFuture) < (second.dueAt ?? .distantFuture)
     }
 
     private func taskPriorityScore(_ task: TaskItem) -> Int {
@@ -488,7 +608,192 @@ struct TodayView: View {
         return 40
     }
 
+    private func taskCaption(_ task: TaskItem) -> String {
+        var parts: [String] = []
+
+        if let dueAt = task.dueAt {
+            parts.append("마감 \(dueAt.formatted(date: .abbreviated, time: .shortened))")
+        }
+
+        parts.append(statusDisplayName(task.status))
+
+        return parts.joined(separator: " · ")
+    }
+
+    private func questionText(for task: TaskItem) -> String {
+        if let evidence = trimmedEvidence(task) {
+            return "\(task.title)를 \(evidence)\n이 일은 현재 완료된 상태인가요?"
+        }
+
+        if let dueAt = task.dueAt,
+           Calendar.current.isDateInToday(dueAt) {
+            return "\(task.title) 마감이 오늘 \(dueAt.formatted(date: .omitted, time: .shortened))인데, 아직 완료 근거가 부족해요.\n현재 상태를 알려주세요."
+        }
+
+        return "\(task.title)의 진행 상태를 아직 판단하지 못했어요.\n현재 상태를 알려주세요."
+    }
+
+    private func trimmedEvidence(_ task: TaskItem) -> String? {
+        guard let evidence = task.evidenceSummary?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !evidence.isEmpty else {
+            return nil
+        }
+
+        return evidence
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func isDueToday(_ task: TaskItem) -> Bool {
+        guard let dueAt = task.dueAt else {
+            return false
+        }
+
+        return Calendar.current.isDateInToday(dueAt)
+    }
+
+    private func scheduleType(_ task: TaskItem) -> ScheduleType {
+        ScheduleType(rawValue: task.scheduleType ?? "") ?? .task
+    }
+
     private func statusDisplayName(_ rawValue: String) -> String {
         TaskStatus(rawValue: rawValue)?.displayName ?? rawValue
+    }
+
+    private func todayBriefing(for type: BriefingType) -> Briefing? {
+        briefings.first {
+            $0.type == type.rawValue && Calendar.current.isDateInToday($0.date)
+        }
+    }
+
+    private func generateBriefing(_ type: BriefingType) {
+        let briefing = briefingService.generateBriefing(
+            type: type,
+            tasks: tasks,
+            activities: activities,
+            snapshots: snapshots
+        )
+
+        briefing.date = Date()
+        briefing.createdAt = Date()
+        modelContext.insert(briefing)
+        saveContext()
+        showToast("\(type.displayName)를 생성했습니다.")
+    }
+
+    private func refreshTaskEvaluation() {
+        let results = evaluationService.evaluateTasks(
+            tasks: tasks,
+            activities: activities
+        )
+
+        evaluationService.applyEvaluationResults(results)
+        saveContext()
+        showToast("오늘 활동을 기준으로 상태를 새로고침했습니다.")
+    }
+
+    private func markCompleted(_ task: TaskItem) {
+        responseService.markCompleted(task: task, modelContext: modelContext)
+        saveContext()
+        showToast("완료로 반영했습니다.")
+    }
+
+    private func markInProgress(_ task: TaskItem) {
+        responseService.markInProgress(task: task, modelContext: modelContext)
+        saveContext()
+        showToast("진행 중으로 반영했습니다.")
+    }
+
+    private func deferToTomorrow(_ task: TaskItem) {
+        responseService.deferToTomorrow(task: task, modelContext: modelContext)
+        saveContext()
+        showToast("내일로 넘겼습니다.")
+    }
+
+    private func saveContext() {
+        try? modelContext.save()
+    }
+
+    private func showToast(_ message: String) {
+        toastMessage = message
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) {
+            if toastMessage == message {
+                toastMessage = nil
+            }
+        }
+    }
+}
+
+private enum TodayProgressKind: String {
+    case completed
+    case inProgress
+    case needsConfirmation
+
+    var title: String {
+        switch self {
+        case .completed:
+            return "완료한 일"
+        case .inProgress:
+            return "진행 중인 일"
+        case .needsConfirmation:
+            return "확인이 필요한 일"
+        }
+    }
+
+    var emptyText: String {
+        switch self {
+        case .completed:
+            return "오늘 완료된 일이 없습니다."
+        case .inProgress:
+            return "현재 진행 중인 일이 없습니다."
+        case .needsConfirmation:
+            return "확인이 필요한 일이 없습니다."
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .completed:
+            return "checkmark.circle.fill"
+        case .inProgress:
+            return "play.circle.fill"
+        case .needsConfirmation:
+            return "questionmark.circle.fill"
+        }
+    }
+}
+
+private struct TodayBriefingSlot: Identifiable {
+    let type: BriefingType
+    let title: String
+    let hour: Int
+    let minute: Int
+
+    var id: String {
+        type.rawValue
+    }
+
+    var scheduledDate: Date {
+        let calendar = Calendar.current
+        var components = calendar.dateComponents([.year, .month, .day], from: Date())
+        components.hour = hour
+        components.minute = minute
+        return calendar.date(from: components) ?? Date()
+    }
+
+    var isDueNow: Bool {
+        Date() >= scheduledDate
+    }
+
+    var timeText: String {
+        scheduledDate.formatted(date: .omitted, time: .shortened)
+    }
+
+    var scheduledText: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ko_KR")
+        formatter.dateFormat = "H시"
+        return formatter.string(from: scheduledDate)
     }
 }
