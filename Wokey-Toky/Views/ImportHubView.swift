@@ -14,76 +14,139 @@ struct ImportHubView: View {
     @State private var showKakaoTalkImport = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                headerSection
+        ZStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    headerSection
 
-                LazyVGrid(
-                    columns: [
-                        GridItem(.adaptive(minimum: 260), spacing: 16)
-                    ],
-                    alignment: .leading,
-                    spacing: 16
-                ) {
-                    importCard(
-                        title: "Calendar",
-                        subtitle: "macOS 캘린더 일정과 마감일을 가져옵니다.",
-                        systemImage: "calendar",
-                        primaryButtonTitle: "Calendar 가져오기"
+                    LazyVGrid(
+                        columns: [
+                            GridItem(.adaptive(minimum: 260), spacing: 16)
+                        ],
+                        alignment: .leading,
+                        spacing: 16
                     ) {
-                        showCalendarImport = true
+                        importCard(
+                            title: "Calendar",
+                            subtitle: "macOS 캘린더 일정과 마감일을 가져옵니다.",
+                            systemImage: "calendar",
+                            primaryButtonTitle: "Calendar 가져오기"
+                        ) {
+                            showCalendarImport = true
+                        }
+
+                        importCard(
+                            title: "Text",
+                            subtitle: "복사한 텍스트나 메모 내용을 붙여넣어 Task 후보를 추출합니다.",
+                            systemImage: "doc.text",
+                            primaryButtonTitle: "Text 가져오기"
+                        ) {
+                            showTextImport = true
+                        }
+
+                        importCard(
+                            title: "Apple Notes",
+                            subtitle: "Apple Notes에서 선택한 메모를 분석해 Task 후보를 추출합니다.",
+                            systemImage: "note.text",
+                            primaryButtonTitle: "Notes 가져오기"
+                        ) {
+                            showAppleNotesImport = true
+                        }
+
+                        importCard(
+                            title: "KakaoTalk",
+                            subtitle: "선택한 카카오톡 채팅방 메시지에서 할 일 후보를 추출합니다.",
+                            systemImage: "bubble.left.and.bubble.right",
+                            primaryButtonTitle: "KakaoTalk 가져오기"
+                        ) {
+                            showKakaoTalkImport = true
+                        }
                     }
 
-                    importCard(
-                        title: "Text",
-                        subtitle: "복사한 텍스트나 메모 내용을 붙여넣어 Task 후보를 추출합니다.",
-                        systemImage: "doc.text",
-                        primaryButtonTitle: "Text 가져오기"
-                    ) {
-                        showTextImport = true
-                    }
+                    guideSection
+                }
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+            }
+            .navigationTitle("Import")
 
-                    importCard(
-                        title: "Apple Notes",
-                        subtitle: "Apple Notes에서 선택한 메모를 분석해 Task 후보를 추출합니다.",
-                        systemImage: "note.text",
-                        primaryButtonTitle: "Notes 가져오기"
-                    ) {
-                        showAppleNotesImport = true
+            if showCalendarImport {
+                modalBackdrop {
+                    showCalendarImport = false
+                } content: {
+                    ImportSheetContainer(title: "Calendar Import") {
+                        showCalendarImport = false
+                    } content: {
+                        CalendarImportView()
                     }
+                    .frame(width: 760, height: 680)
+                }
+            }
 
-                    importCard(
-                        title: "KakaoTalk",
-                        subtitle: "선택한 카카오톡 채팅방 메시지에서 할 일 후보를 추출합니다.",
-                        systemImage: "bubble.left.and.bubble.right",
-                        primaryButtonTitle: "KakaoTalk 가져오기"
-                    ) {
-                        showKakaoTalkImport = true
+            if showTextImport {
+                modalBackdrop {
+                    showTextImport = false
+                } content: {
+                    ImportSheetContainer(title: "Text Import") {
+                        showTextImport = false
+                    } content: {
+                        TextImportView()
                     }
+                    .frame(width: 760, height: 680)
+                }
+            }
+
+            if showAppleNotesImport {
+                modalBackdrop {
+                    showAppleNotesImport = false
+                } content: {
+                    ImportSheetContainer(title: "Apple Notes Import") {
+                        showAppleNotesImport = false
+                    } content: {
+                        AppleNotesImportView()
+                    }
+                    .frame(width: 820, height: 720)
+                }
+            }
+
+            if showKakaoTalkImport {
+                modalBackdrop {
+                    showKakaoTalkImport = false
+                } content: {
+                    ImportSheetContainer(title: "KakaoTalk Import") {
+                        showKakaoTalkImport = false
+                    } content: {
+                        KakaoTalkImportView()
+                    }
+                    .frame(width: 900, height: 760)
+                }
+            }
+        }
+    }
+
+    private func modalBackdrop<Content: View>(
+        dismiss: @escaping () -> Void,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        ZStack {
+            Color.black.opacity(0.18)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    dismiss()
                 }
 
-                guideSection
-            }
-            .padding()
-            .frame(maxWidth: .infinity, alignment: .topLeading)
+            content()
+                .background(Color(nsColor: .windowBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                }
+                .shadow(color: .black.opacity(0.2), radius: 28, x: 0, y: 14)
+                .onTapGesture { }
         }
-        .navigationTitle("Import")
-        .sheet(isPresented: $showCalendarImport) {
-            CalendarImportView()
-                .frame(minWidth: 760, minHeight: 680)
-        }
-        .sheet(isPresented: $showTextImport) {
-            TextImportView()
-                .frame(minWidth: 760, minHeight: 680)
-        }
-        .sheet(isPresented: $showAppleNotesImport) {
-            AppleNotesImportView()
-                .frame(minWidth: 820, minHeight: 720)
-        }
-        .sheet(isPresented: $showKakaoTalkImport) {
-            KakaoTalkImportView()
-                .frame(minWidth: 900, minHeight: 760)
-        }
+        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+        .zIndex(10)
     }
 
     private var headerSection: some View {
@@ -153,5 +216,44 @@ struct ImportHubView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.quaternary.opacity(0.6))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+}
+
+private struct ImportSheetContainer<Content: View>: View {
+    let title: String
+    let onClose: () -> Void
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(title)
+                    .font(.headline)
+
+                Spacer()
+
+                Button {
+                    onClose()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.cancelAction)
+                .help("닫기")
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 14)
+            .background(.quaternary.opacity(0.6))
+
+            Divider()
+
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 }
