@@ -166,9 +166,13 @@ struct KakaoTalkImportView: View {
                 Text("LLM 처리: \(llmModeDisplayName(settings.llmProcessingMode))")
 
                 if !settings.isEnabled || !settings.hasAcceptedPrivacyNotice {
-                    Text("Settings에서 카카오톡 연동을 켜고 개인정보 안내에 동의해야 메시지 분석을 사용할 수 있습니다.")
+                    Text("메시지 분석을 사용하려면 개인정보 안내에 동의하고 카카오톡 연동을 켜주세요.")
                         .font(.caption)
                         .foregroundStyle(.orange)
+
+                    Button("개인정보 안내에 동의하고 연동 켜기") {
+                        enableKakaoImport()
+                    }
                 }
 
                 if settings.llmProcessingMode == KakaoTalkLLMProcessingMode.allowExternalAPI.rawValue {
@@ -177,8 +181,12 @@ struct KakaoTalkImportView: View {
                         .foregroundStyle(.red)
                 }
             } else {
-                Text("Settings에서 카카오톡 연동 설정을 먼저 저장해주세요.")
+                Text("카카오톡 메시지는 선택한 채팅방에서만 읽으며, 후보 추출 전에 연동 동의가 필요합니다.")
                     .foregroundStyle(.secondary)
+
+                Button("개인정보 안내에 동의하고 연동 시작") {
+                    enableKakaoImport()
+                }
             }
         }
         .font(.caption)
@@ -456,6 +464,25 @@ struct KakaoTalkImportView: View {
         }
 
         return settings.isEnabled && settings.hasAcceptedPrivacyNotice
+    }
+
+    private func enableKakaoImport() {
+        if let settings = currentKakaoSettings {
+            settings.isEnabled = true
+            settings.hasAcceptedPrivacyNotice = true
+            settings.updatedAt = Date()
+        } else {
+            modelContext.insert(
+                KakaoTalkSettings(
+                    isEnabled: true,
+                    hasAcceptedPrivacyNotice: true
+                )
+            )
+        }
+
+        try? modelContext.save()
+        statusMessage = "카카오톡 연동을 켰습니다. helper 상태를 확인한 뒤 채팅방을 불러오세요."
+        showToast("카카오톡 연동을 켰습니다.")
     }
 
     private func applySettingsDefaults() {
