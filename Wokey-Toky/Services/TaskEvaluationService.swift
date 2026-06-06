@@ -14,6 +14,7 @@ final class TaskEvaluationService {
     ) -> [TaskEvaluationResult] {
         let activeTasks = tasks.filter {
             !$0.isCompleted &&
+            ($0.scheduleType ?? ScheduleType.task.rawValue) == ScheduleType.task.rawValue &&
             $0.status != TaskStatus.deferred.rawValue
         }
 
