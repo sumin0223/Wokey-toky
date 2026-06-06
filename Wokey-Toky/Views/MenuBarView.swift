@@ -106,6 +106,11 @@ struct MenuBarView: View {
 
     private var footerSection: some View {
         VStack(alignment: .leading, spacing: 8) {
+            Button("알림 권한 요청") {
+                Task {
+                    _ = await NotificationService.shared.requestAuthorization()
+                }
+            }
             Button("답변 필요 알림 테스트") {
                         NotificationService.shared.scheduleTaskConfirmationNotification(
                             taskCount: confirmationTasks.count
