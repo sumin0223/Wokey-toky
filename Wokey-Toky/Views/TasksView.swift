@@ -31,6 +31,8 @@ struct TasksView: View {
     @State private var newTaskDueAt: Date = Date()
     @State private var hasDueDate: Bool = false
     @State private var newTaskKeywords: String = ""
+    @State private var newScheduleType: ScheduleType = .task
+    @State private var newRequiresPCWork: Bool = true
     
     @State private var editingTask: TaskItem?
     @State private var isShowingTaskEditSheet = false
@@ -104,6 +106,12 @@ struct TasksView: View {
         editingTaskKeywords = task.relatedKeywords ?? ""
         editingTaskDueAt = task.dueAt ?? Date()
         editingTaskHasDueAt = task.dueAt != nil
+        if task.scheduleType == nil {
+            task.scheduleType = ScheduleType.task.rawValue
+        }
+        if task.requiresPCWork == nil {
+            task.requiresPCWork = true
+        }
     }
     
     private func taskEditSheet(_ task: TaskItem) -> some View {
@@ -165,11 +173,11 @@ struct TasksView: View {
     private var headerSection: some View {
         HStack {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Tasks")
+                Text("Schedule")
                     .font(.largeTitle)
                     .bold()
 
-                Text("캘린더, 수동 입력, LLM 제안에서 나온 할 일을 관리합니다.")
+                Text("Task와 Event를 구분해 일정과 할 일을 관리합니다.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -188,10 +196,22 @@ struct TasksView: View {
 
     private var addTaskSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("새 할 일")
+            Text("새 일정")
                 .font(.headline)
 
-            TextField("예: 생산시스템관리 과제 제출", text: $newTaskTitle)
+            Picker("구분", selection: $newScheduleType) {
+                ForEach(ScheduleType.allCases, id: \.self) { type in
+                    Text("\(type.displayName) · \(type.description)")
+                        .tag(type)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            if newScheduleType == .task {
+                Toggle("PC 작업 판단 대상으로 포함", isOn: $newRequiresPCWork)
+            }
+
+            TextField(newScheduleType == .task ? "예: 생산시스템관리 과제 제출" : "예: 교수님 미팅", text: $newTaskTitle)
                 .textFieldStyle(.roundedBorder)
 
             TextField("상세 설명 선택 입력", text: $newTaskDetail)
@@ -226,7 +246,7 @@ struct TasksView: View {
 
     private var taskListSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("할 일 목록")
+            Text("일정 목록")
                 .font(.title2)
                 .bold()
 
@@ -369,6 +389,20 @@ struct TasksView: View {
                 .background(.quaternary)
                 .clipShape(Capsule())
 
+            Text(scheduleType(task).displayName)
+                .font(.caption2)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(.quaternary)
+                .clipShape(Capsule())
+
+            if scheduleType(task) == .task {
+                Text((task.requiresPCWork ?? true) ? "PC 작업" : "오프라인")
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .foregroundStyle(.secondary)
+            }
+
             if let keywords = task.relatedKeywords,
                !keywords.isEmpty {
                 Text(keywords)
@@ -448,6 +482,8 @@ struct TasksView: View {
             detail: trimmedDetail.isEmpty ? nil : trimmedDetail,
             source: "manual",
             status: TaskStatus.pending.rawValue,
+            scheduleType: newScheduleType.rawValue,
+            requiresPCWork: newScheduleType == .task ? newRequiresPCWork : false,
             dueAt: hasDueDate ? newTaskDueAt : nil,
             relatedKeywords: trimmedKeywords.isEmpty ? nil : trimmedKeywords
         )
@@ -460,6 +496,8 @@ struct TasksView: View {
         newTaskKeywords = ""
         hasDueDate = false
         newTaskDueAt = Date()
+        newScheduleType = .task
+        newRequiresPCWork = true
     }
 
     private func toggleTask(_ task: TaskItem) {
@@ -586,5 +624,9 @@ struct TasksView: View {
         let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: now) ?? now
 
         return dueAt >= now && dueAt <= tomorrow
+    }
+
+    private func scheduleType(_ task: TaskItem) -> ScheduleType {
+        ScheduleType(rawValue: task.scheduleType ?? "") ?? .task
     }
 }
