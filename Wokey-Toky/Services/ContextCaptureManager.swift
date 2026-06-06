@@ -43,10 +43,16 @@ final class ContextCaptureManager: ObservableObject {
         }
     }
 
-    func stop() {
+    func stop(modelContext: ModelContext? = nil) {
+        if let modelContext {
+            closeLatestActivity(modelContext: modelContext, endedAt: Date())
+        }
+
         isCapturing = false
         timer?.cancel()
         timer = nil
+        lastActivitySignature = ""
+        lastWindowSignature = ""
     }
 
     func refreshOnly() {
