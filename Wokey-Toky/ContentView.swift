@@ -49,13 +49,7 @@ struct ContentView: View {
             TodayView()
 
         case .activity:
-            ActivityTimelineView()
-
-        case .windows:
-            VisibleWindowsView()
-
-        case .records:
-            WindowRecordsView()
+            ActivityHubView()
 
         case .schedule:
             TasksView()
@@ -84,8 +78,6 @@ struct ContentView: View {
 private enum AppSection: String, CaseIterable, Identifiable {
     case today
     case activity
-    case windows
-    case records
     case schedule
     case importData
     case briefing
@@ -104,10 +96,6 @@ private enum AppSection: String, CaseIterable, Identifiable {
             return "Today"
         case .activity:
             return "오늘의 활동"
-        case .windows:
-            return "화면 창"
-        case .records:
-            return "화면 기록"
         case .schedule:
             return "Schedule"
         case .importData:
@@ -131,10 +119,6 @@ private enum AppSection: String, CaseIterable, Identifiable {
             return "house"
         case .activity:
             return "waveform.path.ecg"
-        case .windows:
-            return "macwindow"
-        case .records:
-            return "rectangle.stack"
         case .schedule:
             return "calendar.badge.clock"
         case .importData:
