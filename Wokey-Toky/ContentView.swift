@@ -60,17 +60,8 @@ struct ContentView: View {
         case .schedule:
             TasksView()
 
-        case .calendarImport:
-            CalendarImportView()
-
-        case .textImport:
-            TextImportView()
-
-        case .notesImport:
-            AppleNotesImportView()
-
-        case .kakaoImport:
-            KakaoTalkImportView()
+        case .importData:
+            ImportHubView()
 
         case .briefing:
             BriefingView()
@@ -96,10 +87,7 @@ private enum AppSection: String, CaseIterable, Identifiable {
     case windows
     case records
     case schedule
-    case calendarImport
-    case textImport
-    case notesImport
-    case kakaoImport
+    case importData
     case briefing
     case chat
     case summary
@@ -122,14 +110,8 @@ private enum AppSection: String, CaseIterable, Identifiable {
             return "화면 기록"
         case .schedule:
             return "Schedule"
-        case .calendarImport:
-            return "Calendar"
-        case .textImport:
-            return "Text"
-        case .notesImport:
-            return "Notes"
-        case .kakaoImport:
-            return "KakaoTalk"
+        case .importData:
+            return "Import"
         case .briefing:
             return "Briefing"
         case .chat:
@@ -155,14 +137,8 @@ private enum AppSection: String, CaseIterable, Identifiable {
             return "rectangle.stack"
         case .schedule:
             return "calendar.badge.clock"
-        case .calendarImport:
-            return "calendar"
-        case .textImport:
-            return "doc.text"
-        case .notesImport:
-            return "note.text"
-        case .kakaoImport:
-            return "message"
+        case .importData:
+            return "square.and.arrow.down"
         case .briefing:
             return "text.bubble"
         case .chat:
