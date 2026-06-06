@@ -44,6 +44,7 @@ struct BriefingView: View {
     @State private var reviewMessages: [String] = []
     @State private var isInterpretingResponse = false
     @State private var interpretationErrorMessage: String?
+    @State private var undoStack: [TaskUndoSnapshot] = []
     
     private var responseSettings: ResponseSettings {
         if let settings = responseSettingsList.first {
@@ -71,7 +72,7 @@ struct BriefingView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 32) {
                 headerSection
                 
                 actionSection
@@ -85,10 +86,8 @@ struct BriefingView: View {
                 naturalResponseSection
                 
                 todayCheckTasksSection
-                
-                briefingHistorySection
             }
-            .padding()
+            .padding(WokeyDesign.pagePadding)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -98,61 +97,38 @@ struct BriefingView: View {
             Text("Briefing")
                 .font(.largeTitle)
                 .bold()
+                .foregroundStyle(WokeyDesign.ink)
 
-            Text("계획된 할 일과 실제 활동 기록을 비교해 하루 업무를 점검합니다.")
+            Text("점심 보고, 저녁 회고, 답변이 필요한 Task를 정리합니다.")
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(WokeyDesign.muted)
         }
     }
 
     private var actionSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Button("규칙 기반 아침 브리핑") {
-                    evaluateAndGenerate(.morning)
+        HStack {
+            Button(isGeneratingLLMBriefing ? "생성 중..." : "점심 보고 만들기") {
+                Task {
+                    await generateBriefingWithFallback(.lunch)
                 }
-
-                Button("규칙 기반 점심 점검") {
-                    evaluateAndGenerate(.lunch)
-                }
-
-                Button("규칙 기반 저녁 회고") {
-                    evaluateAndGenerate(.evening)
-                }
-
-                Spacer()
-
-                Button("브리핑 전체 삭제") {
-                    deleteAllBriefings()
-                }
-                .foregroundStyle(.red)
             }
+            .disabled(isGeneratingLLMBriefing)
 
-            HStack {
-                Button(isGeneratingLLMBriefing ? "LLM 생성 중..." : "LLM 아침 브리핑") {
-                    Task {
-                        await generateLLMBriefing(.morning)
-                    }
+            Button(isGeneratingLLMBriefing ? "생성 중..." : "저녁 회고 및 내일 정리") {
+                Task {
+                    await generateBriefingWithFallback(.evening)
                 }
-                .disabled(isGeneratingLLMBriefing)
-
-                Button(isGeneratingLLMBriefing ? "LLM 생성 중..." : "LLM 점심 점검") {
-                    Task {
-                        await generateLLMBriefing(.lunch)
-                    }
-                }
-                .disabled(isGeneratingLLMBriefing)
-
-                Button(isGeneratingLLMBriefing ? "LLM 생성 중..." : "LLM 저녁 회고") {
-                    Task {
-                        await generateLLMBriefing(.evening)
-                    }
-                }
-                .disabled(isGeneratingLLMBriefing)
-
-                Spacer()
             }
+            .disabled(isGeneratingLLMBriefing)
+
+            Spacer()
+
+            Button("브리핑 전체 삭제") {
+                deleteAllBriefings()
+            }
+            .foregroundStyle(WokeyDesign.active)
         }
+        .wokeyPanel()
     }
     
     private var llmErrorSection: some View {
@@ -160,9 +136,9 @@ struct BriefingView: View {
             if let llmErrorMessage {
                 Text(llmErrorMessage)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(WokeyDesign.active)
                     .padding()
-                    .background(.quaternary)
+                    .background(WokeyDesign.warningFill)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             }
         }
@@ -180,7 +156,7 @@ struct BriefingView: View {
                 ContentUnavailableView(
                     "아직 생성된 브리핑이 없습니다",
                     systemImage: "text.bubble",
-                    description: Text("아침, 점심, 저녁 브리핑 중 하나를 생성해보세요.")
+                    description: Text("점심 보고나 저녁 회고를 생성해보세요.")
                 )
             }
         }
@@ -196,7 +172,7 @@ struct BriefingView: View {
 
             if confirmationTasks.isEmpty {
                 Text("현재 답변이 필요한 할 일이 없습니다.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
             } else {
                 ForEach(confirmationTasks) { task in
                     confirmationTaskCard(task)
@@ -213,12 +189,12 @@ struct BriefingView: View {
 
             Text("짧게 답해도 됩니다. 확실한 답변은 자동 반영하고, 애매한 답변은 다시 확인합니다.")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(WokeyDesign.muted)
 
             TextEditor(text: $naturalResponseText)
                 .frame(minHeight: 90)
                 .padding(8)
-                .background(.background)
+                .background(WokeyDesign.panel)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
 
             HStack {
@@ -243,10 +219,15 @@ struct BriefingView: View {
                 Spacer()
             }
 
+            Button("뒤로가기") {
+                undoLastTaskChange()
+            }
+            .disabled(undoStack.isEmpty)
+
             if let interpretationErrorMessage {
                 Text(interpretationErrorMessage)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(WokeyDesign.active)
             }
 
             if !appliedResponseMessages.isEmpty {
@@ -267,9 +248,7 @@ struct BriefingView: View {
                 clarificationSection
             }
         }
-        .padding()
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .wokeyPanel()
     }
     
     private func todayCheckTaskCard(_ task: TaskItem) -> some View {
@@ -284,32 +263,33 @@ struct BriefingView: View {
                     .font(.caption2)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .background(.quaternary)
+                    .background(WokeyDesign.statusFill)
                     .clipShape(Capsule())
             }
             
             if let plannedStartAt = task.plannedStartAt {
                 Text("시작: \(plannedStartAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
             }
 
             if let dueAt = task.dueAt {
                 Text("마감: \(dueAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption)
-                    .foregroundStyle(isOverdue(task) ? .red : .secondary)
+                    .foregroundStyle(isOverdue(task) ? WokeyDesign.active : WokeyDesign.muted)
             }
 
             if let evidence = task.evidenceSummary,
                !evidence.isEmpty {
                 Text("근거: \(evidence)")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
                     .lineLimit(3)
             }
 
             HStack {
                 Button("완료") {
+                    remember(task)
                     responseService.markCompleted(
                         task: task,
                         modelContext: modelContext
@@ -317,6 +297,7 @@ struct BriefingView: View {
                 }
 
                 Button("진행 중") {
+                    remember(task)
                     responseService.markInProgress(
                         task: task,
                         modelContext: modelContext
@@ -324,6 +305,7 @@ struct BriefingView: View {
                 }
 
                 Button("미완료") {
+                    remember(task)
                     responseService.markPending(
                         task: task,
                         modelContext: modelContext
@@ -331,6 +313,7 @@ struct BriefingView: View {
                 }
 
                 Button("내일로 넘김") {
+                    remember(task)
                     responseService.deferToTomorrow(
                         task: task,
                         modelContext: modelContext
@@ -341,9 +324,7 @@ struct BriefingView: View {
             }
             .font(.caption)
         }
-        .padding()
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .wokeyPanel()
     }
     
     private var todayCheckTasks: [TaskItem] {
@@ -388,7 +369,7 @@ struct BriefingView: View {
 
             if checkTasks.isEmpty {
                 Text("현재 오늘 점검할 할 일이 없습니다.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
             } else {
                 ForEach(checkTasks) { task in
                     todayCheckTaskCard(task)
@@ -417,22 +398,6 @@ struct BriefingView: View {
             }
     }
 
-    private var briefingHistorySection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("브리핑 기록")
-                .font(.title2)
-                .bold()
-
-            if briefings.isEmpty {
-                Text("아직 저장된 브리핑이 없습니다.")
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(briefings.dropFirst()) { briefing in
-                    briefingCard(briefing, isLatest: false)
-                }
-            }
-        }
-    }
 
     private func briefingCard(
         _ briefing: Briefing,
@@ -447,14 +412,14 @@ struct BriefingView: View {
 
                     Text(briefingTypeText(briefing.type))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(WokeyDesign.muted)
                 }
 
                 Spacer()
 
                 Text(briefing.createdAt.formatted(date: .abbreviated, time: .shortened))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
             }
 
             Divider()
@@ -479,7 +444,7 @@ struct BriefingView: View {
 
                     Text(briefing.questions)
                         .font(.body)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(WokeyDesign.muted)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
                         .textSelection(.enabled)
@@ -488,8 +453,7 @@ struct BriefingView: View {
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .wokeyPanel()
     }
 
     private func evaluateAndGenerate(_ type: BriefingType) {
@@ -510,6 +474,15 @@ struct BriefingView: View {
         modelContext.insert(briefing)
     }
 
+    private func generateBriefingWithFallback(_ type: BriefingType) async {
+        guard currentLLMConfig != nil else {
+            evaluateAndGenerate(type)
+            return
+        }
+
+        await generateLLMBriefing(type)
+    }
+
     private func deleteAllBriefings() {
         for briefing in briefings {
             modelContext.delete(briefing)
@@ -528,26 +501,27 @@ struct BriefingView: View {
                     .font(.caption2)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .background(.quaternary)
+                    .background(WokeyDesign.statusFill)
                     .clipShape(Capsule())
             }
 
             if let dueAt = task.dueAt {
                 Text("마감: \(dueAt.formatted(date: .abbreviated, time: .shortened))")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
             }
 
             if let evidence = task.evidenceSummary,
                !evidence.isEmpty {
                 Text(evidence)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
                     .textSelection(.enabled)
             }
 
             HStack {
                 Button("완료") {
+                    remember(task)
                     responseService.markCompleted(
                         task: task,
                         modelContext: modelContext
@@ -555,6 +529,7 @@ struct BriefingView: View {
                 }
 
                 Button("진행 중") {
+                    remember(task)
                     responseService.markInProgress(
                         task: task,
                         modelContext: modelContext
@@ -562,6 +537,7 @@ struct BriefingView: View {
                 }
 
                 Button("미완료") {
+                    remember(task)
                     responseService.markPending(
                         task: task,
                         modelContext: modelContext
@@ -569,6 +545,7 @@ struct BriefingView: View {
                 }
 
                 Button("내일로 넘김") {
+                    remember(task)
                     responseService.deferToTomorrow(
                         task: task,
                         modelContext: modelContext
@@ -579,9 +556,7 @@ struct BriefingView: View {
             }
             .font(.caption)
         }
-        .padding()
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .wokeyPanel()
     }
 
     private func taskPriorityScore(_ task: TaskItem) -> Int {
@@ -705,12 +680,12 @@ struct BriefingView: View {
             ForEach(messages, id: \.self) { message in
                 Text("• \(message)")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
             }
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.background)
+        .background(WokeyDesign.panel)
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
     
@@ -849,6 +824,7 @@ struct BriefingView: View {
 
             if interpretation.confidence >= autoApplyConfidenceThreshold &&
                 autoApplyNaturalResponses {
+                remember(matchedTask)
                 responseService.applyInterpretation(
                     interpretation,
                     to: matchedTask,
@@ -1114,5 +1090,45 @@ struct BriefingView: View {
     
     private func removeClarificationItem(_ item: ClarificationItem) {
         clarificationItems.removeAll { $0.id == item.id }
+    }
+    private func remember(_ task: TaskItem) {
+        undoStack.append(TaskUndoSnapshot(task: task))
+    }
+
+    private func undoLastTaskChange() {
+        guard let snapshot = undoStack.popLast() else {
+            return
+        }
+
+        snapshot.restore()
+    }
+}
+
+private struct TaskUndoSnapshot {
+    let task: TaskItem
+    let status: String
+    let isCompleted: Bool
+    let completedAt: Date?
+    let evidenceSummary: String?
+    let needsUserConfirmation: Bool
+    let deferredTo: Date?
+
+    init(task: TaskItem) {
+        self.task = task
+        self.status = task.status
+        self.isCompleted = task.isCompleted
+        self.completedAt = task.completedAt
+        self.evidenceSummary = task.evidenceSummary
+        self.needsUserConfirmation = task.needsUserConfirmation
+        self.deferredTo = task.deferredTo
+    }
+
+    func restore() {
+        task.status = status
+        task.isCompleted = isCompleted
+        task.completedAt = completedAt
+        task.evidenceSummary = evidenceSummary
+        task.needsUserConfirmation = needsUserConfirmation
+        task.deferredTo = deferredTo
     }
 }
