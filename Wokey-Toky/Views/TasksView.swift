@@ -13,114 +13,250 @@ struct TasksView: View {
 
     @Query(sort: \TaskItem.createdAt, order: .reverse)
     private var tasks: [TaskItem]
-    
-    @Query(sort: \ActivityEvent.startedAt, order: .reverse)
-    private var activities: [ActivityEvent]
 
-    @Query(sort: \TaskChangeLog.createdAt, order: .reverse)
-    private var taskChangeLogs: [TaskChangeLog]
+    @State private var selectedType: ScheduleType = .task
+    @State private var titleText = ""
+    @State private var selectedDate = Date()
+    @State private var hasTime = false
 
-    @Query(sort: \AppNotification.createdAt, order: .reverse)
-    private var appNotifications: [AppNotification]
-    
-    private let evaluationService = TaskEvaluationService()
-    private let responseService = TaskResponseService()
-
-    @State private var newTaskTitle: String = ""
-    @State private var newTaskDetail: String = ""
-    @State private var newTaskDueAt: Date = Date()
-    @State private var hasDueDate: Bool = false
-    @State private var newTaskKeywords: String = ""
-    @State private var newScheduleType: ScheduleType = .task
-    @State private var newRequiresPCWork: Bool = true
-    
     @State private var editingTask: TaskItem?
-    @State private var isShowingTaskEditSheet = false
-    
-    @State private var editingTaskTitle = ""
-    @State private var editingTaskDetail = ""
-    @State private var editingTaskKeywords = ""
-    @State private var editingTaskDueAt = Date()
-    @State private var editingTaskHasDueAt = false
+    @State private var editingTitle = ""
+    @State private var editingDetail = ""
+    @State private var editingKeywords = ""
+    @State private var editingDate = Date()
+    @State private var editingHasDate = false
+    @State private var editingType: ScheduleType = .task
 
-    @State private var taskPendingDelete: TaskItem?
-    @State private var showTaskDeleteConfirmation = false
-    @State private var showCompletedDeleteConfirmation = false
+    @State private var deletingTask: TaskItem?
+    @State private var showDeleteConfirmation = false
     @State private var toastMessage: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            headerSection
-
-            addTaskSection
-
-            taskListSection
+        ScrollView {
+            VStack(alignment: .leading, spacing: 34) {
+                headerSection
+                addCard
+                recentSection
+            }
+            .padding(WokeyDesign.pagePadding)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .padding()
         .overlay(alignment: .top) {
             if let toastMessage {
                 InAppToastView(message: toastMessage)
             }
         }
         .sheet(item: $editingTask) { task in
-            taskEditSheet(task)
+            editSheet(task)
         }
         .confirmationDialog(
-            "이 Task를 삭제할까요?",
-            isPresented: $showTaskDeleteConfirmation,
+            "이 일정을 삭제할까요?",
+            isPresented: $showDeleteConfirmation,
             titleVisibility: .visible
         ) {
             Button("삭제", role: .destructive) {
-                if let task = taskPendingDelete {
-                    modelContext.delete(task)
-                    showToast("Task를 삭제했습니다.")
+                if let deletingTask {
+                    modelContext.delete(deletingTask)
+                    showToast("일정을 삭제했습니다.")
                 }
-                taskPendingDelete = nil
+                deletingTask = nil
             }
 
             Button("취소", role: .cancel) {
-                taskPendingDelete = nil
+                deletingTask = nil
             }
         } message: {
-            Text("삭제하면 이 Task와 연결된 상태 변경 흐름을 더 이상 확인하기 어렵습니다. 확실할 때만 삭제하세요.")
+            Text("삭제한 일정은 되돌릴 수 없습니다.")
         }
-        .confirmationDialog(
-            "완료된 Task를 모두 삭제할까요?",
-            isPresented: $showCompletedDeleteConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("완료된 항목 삭제", role: .destructive) {
-                deleteCompletedTasks()
+    }
+
+    private var headerSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Schedule")
+                .font(.largeTitle)
+                .bold()
+                .foregroundStyle(WokeyDesign.ink)
+
+            Text("Task와 Event를 추가합니다. 진행 확인과 회고는 Today, Briefing, Summary에서 이어집니다.")
+                .font(.subheadline)
+                .foregroundStyle(WokeyDesign.muted)
+        }
+    }
+
+    private var addCard: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("새 일정")
+                    .font(.title2)
+                    .bold()
+                    .foregroundStyle(WokeyDesign.ink)
+
+                Spacer()
+
+                Text(selectedType == .task ? "Today · Briefing에서 점검" : "Summary에서 일정으로 기록")
+                    .font(.caption)
+                    .foregroundStyle(WokeyDesign.muted)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(WokeyDesign.statusFill)
+                    .clipShape(Capsule())
             }
 
-            Button("취소", role: .cancel) { }
-        } message: {
-            Text("완료된 Task 전체가 삭제됩니다. 시연 전 데이터 정리 목적이 아니라면 유지하는 것을 권장합니다.")
+            Picker("구분", selection: $selectedType) {
+                ForEach(ScheduleType.allCases, id: \.self) { type in
+                    Text(type.displayName).tag(type)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("제목")
+                    .font(.caption)
+                    .foregroundStyle(WokeyDesign.muted)
+
+                TextField(
+                    selectedType == .task ? "예: 생산시스템관리 과제 제출" : "예: 교수님 미팅",
+                    text: $titleText
+                )
+                .textFieldStyle(.roundedBorder)
+            }
+
+            HStack(alignment: .top, spacing: 18) {
+                DatePicker(
+                    "날짜",
+                    selection: $selectedDate,
+                    displayedComponents: [.date]
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle("시간 추가", isOn: $hasTime)
+
+                    if hasTime {
+                        DatePicker(
+                            "시간",
+                            selection: $selectedDate,
+                            displayedComponents: [.hourAndMinute]
+                        )
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            HStack {
+                Spacer()
+
+                Button("추가") {
+                    addScheduleItem()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(titleText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .wokeyPanel()
     }
-    
-    private func startEditingTask(_ task: TaskItem) {
-        editingTask = task
-        editingTaskTitle = task.title
-        editingTaskDetail = task.detail ?? ""
-        editingTaskKeywords = task.relatedKeywords ?? ""
-        editingTaskDueAt = task.dueAt ?? Date()
-        editingTaskHasDueAt = task.dueAt != nil
-        if task.scheduleType == nil {
-            task.scheduleType = ScheduleType.task.rawValue
+
+    private var recentSection: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("최근 추가한 일정")
+                    .font(.title2)
+                    .bold()
+                    .foregroundStyle(WokeyDesign.ink)
+
+                Spacer()
+
+                Text("Event \(eventCount) · Task \(taskCount)")
+                    .font(.caption)
+                    .foregroundStyle(WokeyDesign.muted)
+            }
+
+            if recentItems.isEmpty {
+                ContentUnavailableView(
+                    "등록된 일정이 없습니다",
+                    systemImage: "calendar.badge.plus",
+                    description: Text("새 Task나 Event를 추가해보세요.")
+                )
+                .frame(maxWidth: .infinity, minHeight: 180)
+            } else {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    ForEach(recentItems) { task in
+                        scheduleRow(task)
+                    }
+                }
+            }
         }
-        if task.requiresPCWork == nil {
-            task.requiresPCWork = true
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .wokeyPanel()
     }
-    
-    private func taskEditSheet(_ task: TaskItem) -> some View {
+
+    private func scheduleRow(_ task: TaskItem) -> some View {
+        HStack(spacing: 14) {
+            Image(systemName: scheduleType(task) == .event ? "calendar" : "checkmark.circle")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(scheduleType(task) == .event ? WokeyDesign.blue : WokeyDesign.mint)
+                .frame(width: 28)
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(task.title)
+                        .font(.headline)
+                        .foregroundStyle(WokeyDesign.ink)
+                        .lineLimit(1)
+
+                    Text(scheduleType(task).displayName)
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(WokeyDesign.muted)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(WokeyDesign.statusFill)
+                        .clipShape(Capsule())
+                }
+
+                Text(dateText(for: task))
+                    .font(.caption)
+                    .foregroundStyle(WokeyDesign.muted)
+            }
+
+            Spacer()
+
+            Button("수정") {
+                startEditing(task)
+            }
+            .font(.caption)
+            .buttonStyle(.borderless)
+
+            Button(role: .destructive) {
+                deletingTask = task
+                showDeleteConfirmation = true
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.borderless)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(WokeyDesign.quietFill)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private func editSheet(_ task: TaskItem) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Task 수정")
+            Text("일정 수정")
                 .font(.title2)
                 .bold()
 
-            TextField("제목", text: $editingTaskTitle)
+            Picker("구분", selection: $editingType) {
+                ForEach(ScheduleType.allCases, id: \.self) { type in
+                    Text(type.displayName).tag(type)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            TextField("제목", text: $editingTitle)
                 .textFieldStyle(.roundedBorder)
 
             VStack(alignment: .leading, spacing: 6) {
@@ -128,36 +264,31 @@ struct TasksView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                TextEditor(text: $editingTaskDetail)
+                TextEditor(text: $editingDetail)
                     .frame(minHeight: 100)
                     .padding(8)
                     .background(.quaternary)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             }
 
-            TextField("키워드", text: $editingTaskKeywords)
+            TextField("키워드", text: $editingKeywords)
                 .textFieldStyle(.roundedBorder)
 
-            Toggle("마감일 있음", isOn: $editingTaskHasDueAt)
+            Toggle("날짜 있음", isOn: $editingHasDate)
 
-            if editingTaskHasDueAt {
+            if editingHasDate {
                 DatePicker(
-                    "마감일",
-                    selection: $editingTaskDueAt,
+                    "날짜/시간",
+                    selection: $editingDate,
                     displayedComponents: [.date, .hourAndMinute]
                 )
             }
 
             HStack {
                 Button("저장") {
-                    task.title = editingTaskTitle
-                    task.detail = editingTaskDetail.isEmpty ? nil : editingTaskDetail
-                    task.relatedKeywords = editingTaskKeywords.isEmpty ? nil : editingTaskKeywords
-                    task.dueAt = editingTaskHasDueAt ? editingTaskDueAt : nil
-
-                    editingTask = nil
-                    showToast("Task를 수정했습니다.")
+                    saveEditing(task)
                 }
+                .keyboardShortcut(.defaultAction)
 
                 Button("취소") {
                     editingTask = nil
@@ -167,311 +298,30 @@ struct TasksView: View {
             }
         }
         .padding()
-        .frame(width: 560, height: 440)
+        .frame(width: 560, height: 500)
     }
 
-    private var headerSection: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Schedule")
-                    .font(.largeTitle)
-                    .bold()
-
-                Text("Task와 Event를 구분해 일정과 할 일을 관리합니다.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            Button("오늘 활동과 비교") {
-                evaluateTasks()
-            }
-
-            Button("완료된 항목 삭제") {
-                showCompletedDeleteConfirmation = true
-            }
-        }
+    private var activeItems: [TaskItem] {
+        tasks.filter { !$0.isCompleted }
     }
 
-    private var addTaskSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("새 일정")
-                .font(.headline)
-
-            Picker("구분", selection: $newScheduleType) {
-                ForEach(ScheduleType.allCases, id: \.self) { type in
-                    Text("\(type.displayName) · \(type.description)")
-                        .tag(type)
-                }
-            }
-            .pickerStyle(.segmented)
-
-            if newScheduleType == .task {
-                Toggle("PC 작업 판단 대상으로 포함", isOn: $newRequiresPCWork)
-            }
-
-            TextField(newScheduleType == .task ? "예: 생산시스템관리 과제 제출" : "예: 교수님 미팅", text: $newTaskTitle)
-                .textFieldStyle(.roundedBorder)
-
-            TextField("상세 설명 선택 입력", text: $newTaskDetail)
-                .textFieldStyle(.roundedBorder)
-
-            TextField("관련 키워드 예: 생산시스템관리,LMS,과제", text: $newTaskKeywords)
-                .textFieldStyle(.roundedBorder)
-
-            Toggle("마감일 있음", isOn: $hasDueDate)
-
-            if hasDueDate {
-                DatePicker(
-                    "마감일",
-                    selection: $newTaskDueAt,
-                    displayedComponents: [.date, .hourAndMinute]
-                )
-            }
-
-            HStack {
-                Spacer()
-
-                Button("추가") {
-                    addTask()
-                }
-                .disabled(newTaskTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }
-        }
-        .padding()
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+    private var recentItems: [TaskItem] {
+        activeItems
+            .sorted { $0.createdAt > $1.createdAt }
+            .prefix(10)
+            .map { $0 }
     }
 
-    private var taskListSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("일정 목록")
-                .font(.title2)
-                .bold()
-
-            if tasks.isEmpty {
-                ContentUnavailableView(
-                    "등록된 할 일이 없습니다",
-                    systemImage: "checklist",
-                    description: Text("새 할 일을 추가해보세요.")
-                )
-            } else {
-                List {
-                    if !urgentTasks.isEmpty {
-                        Section("마감 임박 / 확인 필요") {
-                            ForEach(urgentTasks) { task in
-                                taskRow(task)
-                            }
-                        }
-                    }
-
-                    if !activeTasks.isEmpty {
-                        Section("진행 중 / 대기") {
-                            ForEach(activeTasks) { task in
-                                taskRow(task)
-                            }
-                        }
-                    }
-
-                    if !deferredTasks.isEmpty {
-                        Section("연기됨") {
-                            ForEach(deferredTasks) { task in
-                                taskRow(task)
-                            }
-                        }
-                    }
-
-                    if !completedTasks.isEmpty {
-                        Section("완료됨") {
-                            ForEach(completedTasks) { task in
-                                taskRow(task)
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    private var eventCount: Int {
+        activeItems.filter { scheduleType($0) == .event }.count
     }
 
-    private func taskRow(_ task: TaskItem) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 12) {
-                Button {
-                    toggleTask(task)
-                } label: {
-                    Image(systemName: task.isCompleted ? "checkmark.circle.fill" : "circle")
-                        .font(.title3)
-                }
-                .buttonStyle(.plain)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text(task.title)
-                            .font(.headline)
-                            .strikethrough(task.isCompleted)
-
-                        if task.needsUserConfirmation {
-                            Text("확인 필요")
-                                .font(.caption2)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 3)
-                                .background(.orange.opacity(0.2))
-                                .clipShape(Capsule())
-                        }
-                    }
-
-                    if let detail = task.detail,
-                       !detail.isEmpty {
-                        Text(detail)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if let plannedStartAt = task.plannedStartAt {
-                        Text("시작: \(plannedStartAt.formatted(date: .abbreviated, time: .shortened))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if let dueAt = task.dueAt {
-                        Text("마감: \(dueAt.formatted(date: .abbreviated, time: .shortened))")
-                            .font(.caption)
-                            .foregroundStyle(isOverdue(task) ? .red : .secondary)
-                    }
-
-                    if let evidence = task.evidenceSummary,
-                       !evidence.isEmpty {
-                        Text("근거: \(evidence)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    if let deferredTo = task.deferredTo {
-                        Text("연기일: \(deferredTo.formatted(date: .abbreviated, time: .shortened))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    tagRow(task)
-                }
-
-                Spacer()
-
-                Button {
-                    taskPendingDelete = task
-                    showTaskDeleteConfirmation = true
-                } label: {
-                    Image(systemName: "trash")
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
-            }
-
-            actionButtons(task)
-        }
-        .padding(.vertical, 8)
+    private var taskCount: Int {
+        activeItems.filter { scheduleType($0) == .task }.count
     }
 
-    private func tagRow(_ task: TaskItem) -> some View {
-        HStack {
-            Text(statusDisplayName(task.status))
-                .font(.caption2)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(.quaternary)
-                .clipShape(Capsule())
-
-            Text(task.source)
-                .font(.caption2)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(.quaternary)
-                .clipShape(Capsule())
-
-            Text(scheduleType(task).displayName)
-                .font(.caption2)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(.quaternary)
-                .clipShape(Capsule())
-
-            if scheduleType(task) == .task {
-                Text((task.requiresPCWork ?? true) ? "PC 작업" : "오프라인")
-                    .font(.caption2)
-                    .lineLimit(1)
-                    .foregroundStyle(.secondary)
-            }
-
-            if let keywords = task.relatedKeywords,
-               !keywords.isEmpty {
-                Text(keywords)
-                    .font(.caption2)
-                    .lineLimit(1)
-                    .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-        }
-    }
-
-    private func actionButtons(_ task: TaskItem) -> some View {
-        HStack {
-            Button("대기") {
-                setStatus(task, status: .pending)
-            }
-
-            Button("진행 중") {
-                setStatus(task, status: .inProgress)
-            }
-
-            Button("확인 필요") {
-                setStatus(task, status: .uncertain)
-            }
-
-            Button("내일로 넘김") {
-                deferTaskToTomorrow(task)
-            }
-            
-            Button("수정") {
-                startEditingTask(task)
-            }
-
-            Spacer()
-        }
-        .font(.caption)
-    }
-
-    private var urgentTasks: [TaskItem] {
-        tasks.filter {
-            !$0.isCompleted &&
-            ($0.needsUserConfirmation || $0.status == TaskStatus.uncertain.rawValue || isDueSoon($0))
-        }
-    }
-
-    private var activeTasks: [TaskItem] {
-        tasks.filter {
-            !$0.isCompleted &&
-            $0.status != TaskStatus.deferred.rawValue &&
-            !urgentTasks.contains($0)
-        }
-    }
-
-    private var deferredTasks: [TaskItem] {
-        tasks.filter {
-            !$0.isCompleted &&
-            $0.status == TaskStatus.deferred.rawValue
-        }
-    }
-
-    private var completedTasks: [TaskItem] {
-        tasks.filter { $0.isCompleted }
-    }
-
-    private func addTask() {
-        let trimmedTitle = newTaskTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedDetail = newTaskDetail.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedKeywords = newTaskKeywords.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func addScheduleItem() {
+        let trimmedTitle = titleText.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !trimmedTitle.isEmpty else {
             return
@@ -479,119 +329,76 @@ struct TasksView: View {
 
         let task = TaskItem(
             title: trimmedTitle,
-            detail: trimmedDetail.isEmpty ? nil : trimmedDetail,
+            detail: nil,
             source: "manual",
             status: TaskStatus.pending.rawValue,
-            scheduleType: newScheduleType.rawValue,
-            requiresPCWork: newScheduleType == .task ? newRequiresPCWork : false,
-            dueAt: hasDueDate ? newTaskDueAt : nil,
-            relatedKeywords: trimmedKeywords.isEmpty ? nil : trimmedKeywords
+            scheduleType: selectedType.rawValue,
+            requiresPCWork: selectedType == .task,
+            dueAt: normalizedSelectedDate(),
+            relatedKeywords: nil
         )
 
         modelContext.insert(task)
-        showToast("Task를 추가했습니다: \(task.title)")
+        showToast("일정을 추가했습니다.")
 
-        newTaskTitle = ""
-        newTaskDetail = ""
-        newTaskKeywords = ""
-        hasDueDate = false
-        newTaskDueAt = Date()
-        newScheduleType = .task
-        newRequiresPCWork = true
+        titleText = ""
+        selectedDate = Date()
+        hasTime = false
+        selectedType = .task
     }
 
-    private func toggleTask(_ task: TaskItem) {
-        if task.isCompleted {
-            responseService.markPending(task: task, modelContext: modelContext)
-            showToast("대기 상태로 되돌렸습니다.")
-        } else {
-            responseService.markCompleted(task: task, modelContext: modelContext)
-            showToast("완료 처리했습니다.")
+    private func normalizedSelectedDate() -> Date {
+        if hasTime {
+            return selectedDate
         }
+
+        return Calendar.current.startOfDay(for: selectedDate)
     }
 
-    private func setStatus(_ task: TaskItem, status: TaskStatus) {
-        switch status {
-        case .pending:
-            responseService.markPending(task: task, modelContext: modelContext)
-        case .inProgress:
-            responseService.markInProgress(task: task, modelContext: modelContext)
-            showToast("진행 중으로 변경했습니다.")
-        case .completed:
-            responseService.markCompleted(task: task, modelContext: modelContext)
-            showToast("완료 처리했습니다.")
-        case .deferred:
-            responseService.deferToTomorrow(task: task, modelContext: modelContext)
-            showToast("내일로 넘겼습니다.")
-        case .uncertain:
-            let previousStatus = task.status
-            let previousIsCompleted = task.isCompleted
-            let previousCompletedAt = task.completedAt
-            let previousDeferredTo = task.deferredTo
-            let previousDueAt = task.dueAt
+    private func startEditing(_ task: TaskItem) {
+        editingTask = task
+        editingTitle = task.title
+        editingDetail = task.detail ?? ""
+        editingKeywords = task.relatedKeywords ?? ""
+        editingDate = task.dueAt ?? Date()
+        editingHasDate = task.dueAt != nil
+        editingType = scheduleType(task)
+    }
 
-            task.status = TaskStatus.uncertain.rawValue
-            task.isCompleted = false
-            task.completedAt = nil
-            task.needsUserConfirmation = true
+    private func saveEditing(_ task: TaskItem) {
+        let trimmedTitle = editingTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedDetail = editingDetail.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedKeywords = editingKeywords.trimmingCharacters(in: .whitespacesAndNewlines)
 
-            let log = TaskChangeLog(
-                taskTitle: task.title,
-                changeType: "statusChanged",
-                previousStatus: previousStatus,
-                newStatus: task.status,
-                previousIsCompleted: previousIsCompleted,
-                newIsCompleted: task.isCompleted,
-                previousCompletedAt: previousCompletedAt,
-                newCompletedAt: task.completedAt,
-                previousDeferredTo: previousDeferredTo,
-                newDeferredTo: task.deferredTo,
-                previousDueAt: previousDueAt,
-                newDueAt: task.dueAt,
-                previousTitle: task.title,
-                newTitle: task.title,
-                reason: "사용자가 확인 필요 상태로 변경했습니다.",
-                source: "manual"
-            )
-            modelContext.insert(log)
-
-            let notification = AppNotification(
-                title: "확인 필요한 Task",
-                message: "\(task.title)을 확인 필요 상태로 변경했습니다.",
-                kind: "taskChange",
-                source: "manual",
-                relatedTaskTitle: task.title,
-                suggestedStatus: task.status
-            )
-            modelContext.insert(notification)
-            showToast("확인 필요 상태로 변경했습니다.")
+        guard !trimmedTitle.isEmpty else {
+            return
         }
+
+        task.title = trimmedTitle
+        task.detail = trimmedDetail.isEmpty ? nil : trimmedDetail
+        task.relatedKeywords = trimmedKeywords.isEmpty ? nil : trimmedKeywords
+        task.scheduleType = editingType.rawValue
+        task.requiresPCWork = editingType == .task
+        task.dueAt = editingHasDate ? editingDate : nil
+
+        editingTask = nil
+        showToast("일정을 수정했습니다.")
     }
 
-    private func deferTaskToTomorrow(_ task: TaskItem) {
-        responseService.deferToTomorrow(task: task, modelContext: modelContext)
-        showToast("내일로 넘겼습니다.")
+    private func scheduleType(_ task: TaskItem) -> ScheduleType {
+        ScheduleType(rawValue: task.scheduleType ?? "") ?? .task
     }
 
-    private func deleteTask(_ task: TaskItem) {
-        modelContext.delete(task)
-    }
-    
-    private func evaluateTasks() {
-        let results = evaluationService.evaluateTasks(
-            tasks: tasks,
-            activities: activities
-        )
-
-        evaluationService.applyEvaluationResults(results)
-    }
-
-    private func deleteCompletedTasks() {
-        let count = completedTasks.count
-        for task in completedTasks {
-            modelContext.delete(task)
+    private func dateText(for task: TaskItem) -> String {
+        guard let dueAt = task.dueAt else {
+            return "날짜 미정"
         }
-        showToast("완료된 Task \(count)개를 삭제했습니다.")
+
+        if scheduleType(task) == .event {
+            return "일정 · \(dueAt.formatted(date: .abbreviated, time: .shortened))"
+        }
+
+        return "마감 · \(dueAt.formatted(date: .abbreviated, time: .shortened))"
     }
 
     private func showToast(_ message: String) {
@@ -601,32 +408,5 @@ struct TasksView: View {
                 toastMessage = nil
             }
         }
-    }
-
-    private func statusDisplayName(_ rawValue: String) -> String {
-        TaskStatus(rawValue: rawValue)?.displayName ?? rawValue
-    }
-
-    private func isOverdue(_ task: TaskItem) -> Bool {
-        guard let dueAt = task.dueAt else {
-            return false
-        }
-
-        return !task.isCompleted && dueAt < Date()
-    }
-
-    private func isDueSoon(_ task: TaskItem) -> Bool {
-        guard let dueAt = task.dueAt else {
-            return false
-        }
-
-        let now = Date()
-        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: now) ?? now
-
-        return dueAt >= now && dueAt <= tomorrow
-    }
-
-    private func scheduleType(_ task: TaskItem) -> ScheduleType {
-        ScheduleType(rawValue: task.scheduleType ?? "") ?? .task
     }
 }
