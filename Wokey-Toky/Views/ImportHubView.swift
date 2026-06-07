@@ -16,7 +16,7 @@ struct ImportHubView: View {
     var body: some View {
         ZStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: WokeyDesign.sectionSpacing) {
                     headerSection
 
                     LazyVGrid(
@@ -65,7 +65,7 @@ struct ImportHubView: View {
 
                     guideSection
                 }
-                .padding()
+                .padding(WokeyDesign.pagePadding)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
             .navigationTitle("Import")
@@ -105,7 +105,7 @@ struct ImportHubView: View {
                     } content: {
                         AppleNotesImportView()
                     }
-                    .frame(width: 820, height: 720)
+                    .frame(width: 760, height: 680)
                 }
             }
 
@@ -118,7 +118,7 @@ struct ImportHubView: View {
                     } content: {
                         KakaoTalkImportView()
                     }
-                    .frame(width: 900, height: 760)
+                    .frame(width: 760, height: 680)
                 }
             }
         }
@@ -131,8 +131,11 @@ struct ImportHubView: View {
         ZStack {
             Color.black.opacity(0.18)
                 .ignoresSafeArea()
+                .contentShape(Rectangle())
                 .onTapGesture {
-                    dismiss()
+                    withAnimation(.easeOut(duration: 0.16)) {
+                        dismiss()
+                    }
                 }
 
             content()
@@ -140,7 +143,7 @@ struct ImportHubView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                        .stroke(WokeyDesign.hairline, lineWidth: 1)
                 }
                 .shadow(color: .black.opacity(0.2), radius: 28, x: 0, y: 14)
                 .onTapGesture { }
@@ -154,10 +157,11 @@ struct ImportHubView: View {
             Text("Import")
                 .font(.largeTitle)
                 .bold()
+                .foregroundStyle(WokeyDesign.ink)
 
-            Text("Calendar, Text, Apple Notes, KakaoTalk에서 Task 후보를 가져옵니다.")
+            Text("Calendar, Text, Apple Notes, KakaoTalk에서 일정과 Task 후보를 가져옵니다.")
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(WokeyDesign.muted)
         }
     }
 
@@ -169,18 +173,25 @@ struct ImportHubView: View {
         action: @escaping () -> Void
     ) -> some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: systemImage)
-                    .font(.title2)
-                    .frame(width: 32)
+            HStack(alignment: .top, spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(WokeyDesign.selection)
+                        .frame(width: 42, height: 42)
+
+                    Image(systemName: systemImage)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(WokeyDesign.ink)
+                }
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(title)
                         .font(.headline)
+                        .foregroundStyle(WokeyDesign.ink)
 
                     Text(subtitle)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(WokeyDesign.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -190,32 +201,37 @@ struct ImportHubView: View {
             Spacer(minLength: 8)
 
             Button(primaryButtonTitle) {
-                action()
+                withAnimation(.easeOut(duration: 0.16)) {
+                    action()
+                }
             }
             .buttonStyle(.borderedProminent)
         }
-        .padding()
+        .padding(20)
         .frame(maxWidth: .infinity, minHeight: 180, alignment: .topLeading)
-        .background(.quaternary)
+        .background(WokeyDesign.quietFill)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(WokeyDesign.hairline, lineWidth: 1)
+        }
     }
 
     private var guideSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("사용 흐름")
                 .font(.headline)
+                .foregroundStyle(WokeyDesign.ink)
 
             Text("1. 가져올 소스를 선택합니다.")
             Text("2. 상세 화면에서 필요한 항목만 선택합니다.")
-            Text("3. LLM 분석 전에는 토큰이 사용되지 않습니다.")
+            Text("3. Claude 분석을 실행하기 전에는 외부 API 요청이 발생하지 않습니다.")
             Text("4. 추출된 후보는 검토 후 Task로 가져옵니다.")
         }
         .font(.caption)
-        .foregroundStyle(.secondary)
-        .padding()
+        .foregroundStyle(WokeyDesign.muted)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.6))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .wokeyPanel()
     }
 
 }
@@ -236,9 +252,12 @@ private struct ImportSheetContainer<Content: View>: View {
                 Button {
                     onClose()
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(WokeyDesign.ink)
+                        .frame(width: 28, height: 28)
+                        .background(WokeyDesign.quietFill)
+                        .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .keyboardShortcut(.cancelAction)
@@ -246,7 +265,7 @@ private struct ImportSheetContainer<Content: View>: View {
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 14)
-            .background(.quaternary.opacity(0.6))
+            .background(WokeyDesign.quietFill)
 
             Divider()
 
