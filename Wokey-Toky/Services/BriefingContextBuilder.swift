@@ -13,7 +13,8 @@ final class BriefingContextBuilder {
         tasks: [TaskItem],
         activities: [ActivityEvent],
         snapshots: [ScreenContextSnapshot],
-        userResponses: [UserTaskResponse]
+        userResponses: [UserTaskResponse],
+        workStateSessions: [UserWorkStateSession] = []
     ) -> String {
         var lines: [String] = []
 
@@ -53,7 +54,21 @@ final class BriefingContextBuilder {
         }
 
         lines.append("")
-        lines.append("## 3. 최근 화면 맥락")
+        lines.append("## 3. 사용자 상태 기록")
+        let todayWorkStateSessions = workStateSessions
+            .filter { Calendar.current.isDateInToday($0.startedAt) }
+            .sorted { $0.startedAt < $1.startedAt }
+
+        if todayWorkStateSessions.isEmpty {
+            lines.append("- 오늘 사용자 상태 전환 기록 없음")
+        } else {
+            for session in todayWorkStateSessions {
+                lines.append(workStateSessionLine(session))
+            }
+        }
+
+        lines.append("")
+        lines.append("## 4. 최근 화면 맥락")
         let todaySnapshots = snapshots
             .filter { Calendar.current.isDateInToday($0.capturedAt) }
             .sorted { $0.capturedAt < $1.capturedAt }
@@ -67,7 +82,7 @@ final class BriefingContextBuilder {
         }
 
         lines.append("")
-        lines.append("## 4. 사용자 답변 기록")
+        lines.append("## 5. 사용자 답변 기록")
         let todayResponses = userResponses
             .filter { Calendar.current.isDateInToday($0.createdAt) }
             .sorted { $0.createdAt < $1.createdAt }
@@ -92,9 +107,11 @@ final class BriefingContextBuilder {
         }
 
         lines.append("")
-        lines.append("## 5. 작성 지침")
+        lines.append("## 6. 작성 지침")
         lines.append("- 사용자가 바로 이해할 수 있는 브리핑 형태로 작성한다.")
         lines.append("- 할 일의 상태, 마감, 실제 활동 근거를 함께 반영한다.")
+        lines.append("- 쉬는 중 또는 자리 비움 시간은 작업 이탈이나 미완료 근거로 단정하지 않는다.")
+        lines.append("- 활동 기록 공백이 사용자 상태 기록과 겹치면 휴식/부재로 해석한다.")
         lines.append("- 완료 여부가 불확실한 일은 확인 질문으로 분리한다.")
         lines.append("- 이미 사용자가 답변한 내용은 다시 묻지 않는다.")
         lines.append("- 로그에 없는 내용을 단정하지 않는다.")
@@ -187,6 +204,14 @@ final class BriefingContextBuilder {
         }
 
         return text
+    }
+
+    private func workStateSessionLine(_ session: UserWorkStateSession) -> String {
+        let stateName = UserWorkState(rawValue: session.state)?.displayName ?? session.state
+        let start = session.startedAt.formatted(date: .omitted, time: .shortened)
+        let end = session.endedAt?.formatted(date: .omitted, time: .shortened) ?? "현재"
+
+        return "- \(start)-\(end) \(stateName)"
     }
 
     private func snapshotBlock(_ snapshot: ScreenContextSnapshot) -> String {

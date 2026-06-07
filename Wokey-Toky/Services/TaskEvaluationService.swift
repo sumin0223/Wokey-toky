@@ -12,14 +12,31 @@ final class TaskEvaluationService {
         tasks: [TaskItem],
         activities: [ActivityEvent]
     ) -> [TaskEvaluationResult] {
+        evaluateTasks(
+            tasks: tasks,
+            activities: activities,
+            workStateSessions: []
+        )
+    }
+
+    func evaluateTasks(
+        tasks: [TaskItem],
+        activities: [ActivityEvent],
+        workStateSessions: [UserWorkStateSession]
+    ) -> [TaskEvaluationResult] {
         let activeTasks = tasks.filter {
             !$0.isCompleted &&
             ($0.scheduleType ?? ScheduleType.task.rawValue) == ScheduleType.task.rawValue &&
             $0.status != TaskStatus.deferred.rawValue
         }
 
+        let effectiveActivities = filterActivitiesDuringUserWork(
+            activities,
+            workStateSessions: workStateSessions
+        )
+
         return activeTasks.map { task in
-            evaluateTask(task, activities: activities)
+            evaluateTask(task, activities: effectiveActivities)
         }
     }
 
@@ -38,54 +55,39 @@ final class TaskEvaluationService {
         }
     }
 
-    private func evaluateTask(
-        _ task: TaskItem,
-        activities: [ActivityEvent]
-    ) -> TaskEvaluationResult {
-        let relatedActivities = findRelatedActivities(
-            task: task,
-            activities: activities
-        )
-
-        let totalMinutes = calculateTotalMinutes(relatedActivities)
-
-        if relatedActivities.isEmpty {
-            return TaskEvaluationResult(
-                task: task,
-                status: .pending,
-                evidenceSummary: "관련 활동 기록이 없습니다.",
-                needsUserConfirmation: isDueSoonOrOverdue(task),
-                relatedActivityMinutes: 0
-            )
+    private func filterActivitiesDuringUserWork(
+        _ activities: [ActivityEvent],
+        workStateSessions: [UserWorkStateSession]
+    ) -> [ActivityEvent] {
+        let nonWorkingSessions = workStateSessions.filter { session in
+            session.state == UserWorkState.resting.rawValue ||
+            session.state == UserWorkState.away.rawValue
         }
 
-        if totalMinutes < 10 {
-            return TaskEvaluationResult(
-                task: task,
-                status: .pending,
-                evidenceSummary: "관련 활동 기록이 \(totalMinutes)분 정도 있습니다. 작업량이 적어 미완료 가능성이 높습니다.",
-                needsUserConfirmation: true,
-                relatedActivityMinutes: totalMinutes
-            )
+        guard !nonWorkingSessions.isEmpty else {
+            return activities
         }
 
-        if totalMinutes < 60 {
-            return TaskEvaluationResult(
-                task: task,
-                status: .uncertain,
-                evidenceSummary: "관련 활동 기록이 \(totalMinutes)분 있습니다. 완료 여부 확인이 필요합니다.",
-                needsUserConfirmation: true,
-                relatedActivityMinutes: totalMinutes
+        return activities.filter { activity in
+            !overlapsAnyNonWorkingSession(
+                activity: activity,
+                sessions: nonWorkingSessions
             )
         }
+    }
 
-        return TaskEvaluationResult(
-            task: task,
-            status: .inProgress,
-            evidenceSummary: "관련 활동 기록이 \(totalMinutes)분 이상 있습니다. 진행 흔적이 충분하지만 완료 여부는 확인이 필요합니다.",
-            needsUserConfirmation: true,
-            relatedActivityMinutes: totalMinutes
-        )
+    private func overlapsAnyNonWorkingSession(
+        activity: ActivityEvent,
+        sessions: [UserWorkStateSession]
+    ) -> Bool {
+        let activityEnd = activity.endedAt ?? Date()
+
+        return sessions.contains { session in
+            let sessionEnd = session.endedAt ?? Date()
+
+            return activity.startedAt < sessionEnd &&
+            activityEnd > session.startedAt
+        }
     }
 
     private func findRelatedActivities(
@@ -174,5 +176,55 @@ final class TaskEvaluationService {
         ) ?? now
 
         return dueAt <= tomorrow
+    }
+
+    private func evaluateTask(
+        _ task: TaskItem,
+        activities: [ActivityEvent]
+    ) -> TaskEvaluationResult {
+        let relatedActivities = findRelatedActivities(
+            task: task,
+            activities: activities
+        )
+
+        let totalMinutes = calculateTotalMinutes(relatedActivities)
+
+        if relatedActivities.isEmpty {
+            return TaskEvaluationResult(
+                task: task,
+                status: .pending,
+                evidenceSummary: "작업 중 상태에서 확인된 관련 활동 기록이 없습니다.",
+                needsUserConfirmation: isDueSoonOrOverdue(task),
+                relatedActivityMinutes: 0
+            )
+        }
+
+        if totalMinutes < 10 {
+            return TaskEvaluationResult(
+                task: task,
+                status: .pending,
+                evidenceSummary: "관련 활동 기록이 \(totalMinutes)분 정도 있습니다. 작업량이 적어 미완료 가능성이 높습니다.",
+                needsUserConfirmation: true,
+                relatedActivityMinutes: totalMinutes
+            )
+        }
+
+        if totalMinutes < 60 {
+            return TaskEvaluationResult(
+                task: task,
+                status: .uncertain,
+                evidenceSummary: "관련 활동 기록이 \(totalMinutes)분 있습니다. 완료 여부 확인이 필요합니다.",
+                needsUserConfirmation: true,
+                relatedActivityMinutes: totalMinutes
+            )
+        }
+
+        return TaskEvaluationResult(
+            task: task,
+            status: .inProgress,
+            evidenceSummary: "관련 활동 기록이 \(totalMinutes)분 이상 있습니다. 진행 흔적이 충분하지만 완료 여부는 확인이 필요합니다.",
+            needsUserConfirmation: true,
+            relatedActivityMinutes: totalMinutes
+        )
     }
 }

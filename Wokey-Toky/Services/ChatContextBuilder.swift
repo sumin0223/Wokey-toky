@@ -12,7 +12,8 @@ final class ChatContextBuilder {
         tasks: [TaskItem],
         activities: [ActivityEvent],
         briefings: [Briefing],
-        userResponses: [UserTaskResponse]
+        userResponses: [UserTaskResponse],
+        workStateSessions: [UserWorkStateSession] = []
     ) -> String {
         var lines: [String] = []
 
@@ -64,7 +65,21 @@ final class ChatContextBuilder {
         }
 
         lines.append("")
-        lines.append("## 4. 오늘 활동 기록")
+        lines.append("## 4. 오늘 사용자 상태 기록")
+        let todayWorkStateSessions = workStateSessions
+            .filter { Calendar.current.isDateInToday($0.startedAt) }
+            .sorted { $0.startedAt < $1.startedAt }
+
+        if todayWorkStateSessions.isEmpty {
+            lines.append("- 오늘 사용자 상태 전환 기록 없음")
+        } else {
+            for session in todayWorkStateSessions {
+                lines.append(workStateSessionLine(session))
+            }
+        }
+
+        lines.append("")
+        lines.append("## 5. 오늘 활동 기록")
         let todayActivities = activities
             .filter { Calendar.current.isDateInToday($0.startedAt) }
             .sorted { $0.startedAt < $1.startedAt }
@@ -78,7 +93,7 @@ final class ChatContextBuilder {
         }
 
         lines.append("")
-        lines.append("## 5. 오늘 사용자 답변 기록")
+        lines.append("## 6. 오늘 사용자 답변 기록")
         let todayResponses = userResponses
             .filter { Calendar.current.isDateInToday($0.createdAt) }
             .sorted { $0.createdAt < $1.createdAt }
@@ -97,6 +112,14 @@ final class ChatContextBuilder {
         }
 
         return lines.joined(separator: "\n")
+    }
+
+    private func workStateSessionLine(_ session: UserWorkStateSession) -> String {
+        let stateName = UserWorkState(rawValue: session.state)?.displayName ?? session.state
+        let start = session.startedAt.formatted(date: .omitted, time: .shortened)
+        let end = session.endedAt?.formatted(date: .omitted, time: .shortened) ?? "현재"
+
+        return "- \(start)-\(end) \(stateName)"
     }
 
     private func taskLine(_ task: TaskItem) -> String {

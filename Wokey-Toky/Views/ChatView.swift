@@ -30,6 +30,9 @@ struct ChatView: View {
     @Query(sort: \TaskChangeLog.createdAt, order: .reverse)
     private var taskChangeLogs: [TaskChangeLog]
 
+    @Query(sort: \UserWorkStateSession.startedAt, order: .reverse)
+    private var workStateSessions: [UserWorkStateSession]
+
     @Query private var llmConfigs: [LLMConfig]
 
 
@@ -1080,7 +1083,8 @@ struct ChatView: View {
             tasks: tasks,
             activities: activities,
             briefings: briefings,
-            userResponses: userResponses
+            userResponses: userResponses,
+            workStateSessions: workStateSessions
         )
 
         do {

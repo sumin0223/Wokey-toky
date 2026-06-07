@@ -27,6 +27,9 @@ struct BriefingView: View {
 
     @Query(sort: \UserTaskResponse.createdAt, order: .reverse)
     private var userResponses: [UserTaskResponse]
+
+    @Query(sort: \UserWorkStateSession.startedAt, order: .reverse)
+    private var workStateSessions: [UserWorkStateSession]
     
     @Query private var responseSettingsList: [ResponseSettings]
 
@@ -459,7 +462,8 @@ struct BriefingView: View {
     private func evaluateAndGenerate(_ type: BriefingType) {
         let results = evaluationService.evaluateTasks(
             tasks: tasks,
-            activities: activities
+            activities: activities,
+            workStateSessions: workStateSessions
         )
 
         evaluationService.applyEvaluationResults(results)
@@ -604,7 +608,8 @@ struct BriefingView: View {
     private func generateLLMBriefing(_ type: BriefingType) async {
         let results = evaluationService.evaluateTasks(
             tasks: tasks,
-            activities: activities
+            activities: activities,
+            workStateSessions: workStateSessions
         )
 
         evaluationService.applyEvaluationResults(results)
@@ -622,7 +627,8 @@ struct BriefingView: View {
             tasks: tasks,
             activities: activities,
             snapshots: snapshots,
-            userResponses: userResponses
+            userResponses: userResponses,
+            workStateSessions: workStateSessions
         )
 
         do {
