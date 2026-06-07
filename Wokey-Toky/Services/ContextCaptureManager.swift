@@ -5,13 +5,55 @@
 //  Created by 조수민 on 5/7/26.
 //
 
+
 import Foundation
 import SwiftData
 import Combine
 
+enum UserWorkState: String, CaseIterable, Identifiable {
+    case working
+    case resting
+    case away
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .working:
+            return "작업 중"
+        case .resting:
+            return "쉬는 중"
+        case .away:
+            return "자리 비움"
+        }
+    }
+}
+
+@Model
+final class UserWorkStateSession {
+    var state: String
+    var startedAt: Date
+    var endedAt: Date?
+    var createdAt: Date
+
+    init(
+        state: String,
+        startedAt: Date = Date(),
+        endedAt: Date? = nil,
+        createdAt: Date = Date()
+    ) {
+        self.state = state
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.createdAt = createdAt
+    }
+}
+
 @MainActor
 final class ContextCaptureManager: ObservableObject {
+    private static let userWorkStateDefaultsKey = "ContextCaptureManager.userWorkState"
     @Published var isCapturing: Bool = false
+    @Published private(set) var userWorkState: UserWorkState = .working
     @Published var latestWindows: [VisibleWindow] = []
 
     private let visibleWindowService = VisibleWindowService()
@@ -20,8 +62,16 @@ final class ContextCaptureManager: ObservableObject {
     private var timer: AnyCancellable?
     private var lastWindowSignature: String = ""
     private var lastActivitySignature: String = ""
+    private var shouldResumeCaptureAfterUserPause = false
+
+    init() {
+        restoreUserWorkState()
+    }
 
     func start(modelContext: ModelContext) {
+        setUserWorkStateValue(.working)
+        shouldResumeCaptureAfterUserPause = false
+
         if isCapturing {
             return
         }
@@ -53,6 +103,101 @@ final class ContextCaptureManager: ObservableObject {
         timer = nil
         lastActivitySignature = ""
         lastWindowSignature = ""
+    }
+
+    func setUserWorkState(
+        _ state: UserWorkState,
+        modelContext: ModelContext
+    ) {
+        guard userWorkState != state else {
+            return
+        }
+
+        recordUserWorkStateTransition(
+            to: state,
+            modelContext: modelContext
+        )
+
+        switch state {
+        case .working:
+            setUserWorkStateValue(.working)
+
+            if shouldResumeCaptureAfterUserPause {
+                shouldResumeCaptureAfterUserPause = false
+                start(modelContext: modelContext)
+            }
+
+        case .resting, .away:
+            setUserWorkStateValue(state)
+
+            if isCapturing {
+                shouldResumeCaptureAfterUserPause = true
+                stop(modelContext: modelContext)
+            }
+        }
+    }
+
+    private func recordUserWorkStateTransition(
+        to state: UserWorkState,
+        modelContext: ModelContext
+    ) {
+        let now = Date()
+
+        closeLatestUserWorkStateSession(
+            modelContext: modelContext,
+            endedAt: now
+        )
+
+        let session = UserWorkStateSession(
+            state: state.rawValue,
+            startedAt: now
+        )
+
+        modelContext.insert(session)
+    }
+
+    private func closeLatestUserWorkStateSession(
+        modelContext: ModelContext,
+        endedAt: Date
+    ) {
+        var descriptor = FetchDescriptor<UserWorkStateSession>(
+            sortBy: [SortDescriptor(\.startedAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 1
+
+        do {
+            let latestSessions = try modelContext.fetch(descriptor)
+
+            if let latestSession = latestSessions.first,
+               latestSession.endedAt == nil {
+                latestSession.endedAt = endedAt
+            }
+        } catch {
+            print("Failed to close latest UserWorkStateSession: \(error)")
+        }
+    }
+
+    private func restoreUserWorkState() {
+        let rawValue = UserDefaults.standard.string(
+            forKey: Self.userWorkStateDefaultsKey
+        )
+
+        guard let rawValue,
+              let savedState = UserWorkState(rawValue: rawValue) else {
+            userWorkState = .working
+            return
+        }
+
+        userWorkState = savedState
+        shouldResumeCaptureAfterUserPause = false
+    }
+
+    private func setUserWorkStateValue(_ state: UserWorkState) {
+        userWorkState = state
+        UserDefaults.standard.set(
+            state.rawValue,
+            forKey: Self.userWorkStateDefaultsKey
+        )
     }
 
     func refreshOnly() {

@@ -8,6 +8,9 @@ import SwiftData
 
 @Model
 final class TaskChangeLog {
+    var taskIdentifier: UUID?
+    var batchID: UUID?
+    var revertExpiresAt: Date?
     var taskTitle: String
     // statusChanged / taskCreated / taskEdited
     var changeType: String
@@ -31,6 +34,9 @@ final class TaskChangeLog {
     var rolledBackAt: Date?
 
     init(
+        taskIdentifier: UUID? = nil,
+        batchID: UUID? = nil,
+        revertExpiresAt: Date? = nil,
         taskTitle: String,
         changeType: String = "statusChanged",
         previousStatus: String? = nil,
@@ -52,6 +58,9 @@ final class TaskChangeLog {
         createdAt: Date = Date(),
         rolledBackAt: Date? = nil
     ) {
+        self.taskIdentifier = taskIdentifier
+        self.batchID = batchID
+        self.revertExpiresAt = revertExpiresAt
         self.taskTitle = taskTitle
         self.changeType = changeType
         self.previousStatus = previousStatus

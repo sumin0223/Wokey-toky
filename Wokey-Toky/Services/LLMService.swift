@@ -32,20 +32,10 @@ struct ClaudeContentBlock: Codable {
     let text: String?
 }
 
-struct LLMChatMessage: Codable {
-    let role: String
-    let content: String
-}
-
-struct LLMChatRequest: Codable {
-    let model: String
-    let messages: [LLMChatMessage]
-    let temperature: Double
-}
 
 struct LLMTaskResponseInterpretation: Codable {
-    let taskTitle: String
-    let status: String
+    let taskTitle: String?
+    let status: String?
     let responseText: String?
     let deferDays: Int?
     let confidence: Double?
@@ -55,19 +45,76 @@ struct LLMTaskResponseInterpretation: Codable {
 
 struct LLMTaskResponseInterpretationResult: Codable {
     let results: [LLMTaskResponseInterpretation]
-}
 
-struct LLMChatResponse: Codable {
-    struct Choice: Codable {
-        struct Message: Codable {
-            let role: String?
-            let content: String?
-        }
-
-        let message: Message
+    enum CodingKeys: String, CodingKey {
+        case results
     }
 
-    let choices: [Choice]
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        results = try container.decodeIfPresent(
+            [LLMTaskResponseInterpretation].self,
+            forKey: .results
+        ) ?? []
+    }
+}
+
+struct LLMChatTaskChange: Codable {
+    let taskIdentifier: String?
+    let taskTitle: String?
+    let targetStatus: String?
+    let confidence: Double?
+    let reason: String?
+}
+
+struct LLMChatAnalysisResult: Codable {
+    let intent: String
+    let reply: String
+    let taskChanges: [LLMChatTaskChange]
+    let needsClarification: Bool
+    let clarificationQuestion: String?
+    let clarificationType: String?
+    let candidateTaskTitles: [String]
+    let candidateTaskIdentifiers: [String]
+    let suggestedStatus: String?
+    let referencedTaskIdentifiers: [String]
+    let targetUserState: String?
+
+    enum CodingKeys: String, CodingKey {
+        case intent
+        case reply
+        case taskChanges
+        case needsClarification
+        case clarificationQuestion
+        case clarificationType
+        case candidateTaskTitles
+        case candidateTaskIdentifiers
+        case suggestedStatus
+        case referencedTaskIdentifiers
+        case targetUserState
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        intent = try container.decodeIfPresent(String.self, forKey: .intent) ?? "taskQuery"
+        reply = try container.decodeIfPresent(String.self, forKey: .reply) ?? ""
+        taskChanges = try container.decodeIfPresent([LLMChatTaskChange].self, forKey: .taskChanges) ?? []
+        needsClarification = try container.decodeIfPresent(Bool.self, forKey: .needsClarification) ?? false
+        clarificationQuestion = try container.decodeIfPresent(String.self, forKey: .clarificationQuestion)
+        clarificationType = try container.decodeIfPresent(String.self, forKey: .clarificationType)
+        candidateTaskTitles = try container.decodeIfPresent([String].self, forKey: .candidateTaskTitles) ?? []
+        candidateTaskIdentifiers = try container.decodeIfPresent([String].self, forKey: .candidateTaskIdentifiers) ?? []
+        suggestedStatus = try container.decodeIfPresent(String.self, forKey: .suggestedStatus)
+        referencedTaskIdentifiers = try container.decodeIfPresent(
+            [String].self,
+            forKey: .referencedTaskIdentifiers
+        ) ?? []
+        targetUserState = try container.decodeIfPresent(
+            String.self,
+            forKey: .targetUserState
+        )
+    }
 }
 
 struct LLMTaskCandidate: Codable {
@@ -171,6 +218,49 @@ final class LLMService {
         )
     }
 
+    func analyzeChatRequest(
+        userMessage: String,
+        context: String,
+        conversationContext: String,
+        tasks: [TaskItem],
+        config: LLMConfig
+    ) async throws -> LLMChatAnalysisResult {
+        for task in tasks where task.stableID == nil {
+            task.stableID = UUID()
+        }
+
+        let prompt = buildChatAnalysisPrompt(
+            userMessage: userMessage,
+            context: context,
+            conversationContext: conversationContext,
+            tasks: tasks
+        )
+
+        let content = try await generateText(
+            systemPrompt: """
+            너는 Wokey-Toky의 작업 관리 전용 챗봇이다.
+            사용자의 요청을 앱 내부 작업 관리 기능 범위에서만 해석하고 반드시 JSON만 출력한다.
+            사용자의 표현이 예시 문장과 정확히 같지 않아도 의미와 최근 대화 맥락을 바탕으로 의도를 판단한다.
+            기록에 없는 사실은 단정하지 않고, 대상이나 상태가 불명확하면 임의로 변경하지 말고 확인 질문을 만든다.
+            """,
+            userPrompt: prompt,
+            config: config,
+            temperature: 0.0,
+            maxTokens: 3072
+        )
+
+        let jsonText = extractJSON(from: content)
+
+        guard let jsonData = jsonText.data(using: .utf8) else {
+            throw LLMServiceError.invalidResponse
+        }
+
+        return try JSONDecoder().decode(
+            LLMChatAnalysisResult.self,
+            from: jsonData
+        )
+    }
+
     // chat 함수
     func sendChatMessage(
         userMessage: String,
@@ -205,6 +295,210 @@ final class LLMService {
         )
     }
     
+    private func buildChatAnalysisPrompt(
+        userMessage: String,
+        context: String,
+        conversationContext: String,
+        tasks: [TaskItem]
+    ) -> String {
+        let taskList = tasks
+            .filter {
+                (ScheduleType(rawValue: $0.scheduleType ?? "") ?? .task) == .task
+            }
+            .map { task in
+                """
+                - taskIdentifier: \(task.stableID?.uuidString ?? "없음")
+                  taskTitle: \(task.title)
+                  status: \(task.status)
+                  isCompleted: \(task.isCompleted)
+                  dueAt: \(task.dueAt?.formatted(date: .abbreviated, time: .shortened) ?? "없음")
+                  project: \(task.projectName ?? "없음")
+                  evidence: \(task.evidenceSummary ?? "없음")
+                """
+            }
+            .joined(separator: "\n")
+
+        return """
+        사용자의 최신 메시지를 최근 대화 맥락과 현재 앱 데이터에 연결해 해석하세요.
+
+        가능한 intent 값은 반드시 아래 중 하나만 사용하세요.
+        - taskQuery
+        - taskStatusChange
+        - briefingRequest
+        - userStateChange
+        - projectManagement
+        - settingsOrPrivacy
+        - outOfScope
+
+        역할 범위:
+        - 할 일과 일정 조회
+        - 완료, 진행 중, 미완료, 내일로 넘김 상태 변경 제안
+        - 활동 기록과 작업 근거 설명
+        - 아침, 점심, 저녁 브리핑
+        - 작업 중, 쉬는 중, 자리 비움 상태
+        - 프로젝트와 하위 작업 정리
+        - 권한, 설정, 개인정보 안내
+
+        범위 밖:
+        - 일반 지식
+        - 날씨, 뉴스, 주식, 환율 등 외부 정보
+        - 과제, 보고서, 논문 대신 작성
+        - 앱과 무관한 잡담
+
+        해석 원칙:
+        - 고정된 예시 문장이나 특정 키워드와 정확히 일치할 필요가 없습니다.
+        - 자연스러운 한국어 표현, 줄임말, 간접 표현을 의미 중심으로 해석하세요.
+        - 최근 대화에서 특정 작업이 언급된 뒤 "그거", "그 일", "아까 말한 거"라고 하면 그 작업 맥락을 이어가세요.
+        - 실제 상태 변경은 아직 수행하지 않습니다. taskStatusChange이면 변경 예정안만 만드세요.
+        - 작업 대상이나 변경 상태가 불명확하면 needsClarification을 true로 설정하세요.
+        - 작업 대상이 불명확하면 clarificationType을 "selectTask"로 설정하고 candidateTaskTitles와 candidateTaskIdentifiers에 가능한 현재 작업을 최대 5개 넣으세요.
+        - candidateTaskTitles와 candidateTaskIdentifiers는 반드시 같은 개수이며 같은 순서로 대응해야 합니다.
+        - candidateTaskIdentifiers에는 현재 작업 목록의 taskIdentifier UUID 문자열을 그대로 사용하세요.
+        - 작업은 명확하지만 상태가 불명확하면 clarificationType을 "selectStatus"로 설정하고 suggestedStatus는 null로 두세요.
+        - selectStatus일 때 candidateTaskTitles와 candidateTaskIdentifiers에는 대상 작업 하나만 넣으세요.
+        - 상태는 명확하지만 작업이 불명확하면 suggestedStatus에 pending, inProgress, completed, deferred 중 하나를 넣으세요.
+        - 확인이 필요하지 않으면 clarificationType은 null, candidateTaskTitles와 candidateTaskIdentifiers는 빈 배열, suggestedStatus는 null로 두세요.
+        - 불명확할 때 임의의 작업을 선택하지 마세요.
+        - taskChanges의 taskIdentifier는 반드시 현재 작업 목록에 있는 taskIdentifier UUID 문자열을 그대로 사용하세요.
+        - taskChanges의 taskTitle도 현재 작업 목록에 있는 제목을 그대로 사용하세요.
+        - taskIdentifier와 taskTitle은 반드시 같은 작업을 가리켜야 합니다.
+        - 동일하거나 비슷한 제목의 작업이 여러 개라면 확인 질문을 만드세요.
+        - 제목이 짧거나 특이하더라도 taskIdentifier가 일치하면 해당 작업으로 판단하세요.
+        - 상태 변경 결과를 만들 때 제목 유사도보다 taskIdentifier 일치를 우선하세요.
+        - 기록에 없는 완료 여부나 활동 사실을 만들지 마세요.
+        - taskStatusChange에서 작업이 명확하면 taskIdentifier를 null로 두지 마세요.
+        - 작업 대상이 불명확해 확인 질문이 필요할 때만 taskChanges를 빈 배열로 두세요.
+        - 현재 작업 목록에 없는 UUID를 만들거나 추측하지 마세요.
+        - referencedTaskIdentifiers에는 이번 응답에서 실제로 언급하거나 대상으로 삼은 작업의 taskIdentifier를 넣으세요.
+        - taskQuery, briefingRequest, taskStatusChange에서 작업을 하나 이상 언급했다면 referencedTaskIdentifiers를 비워두지 마세요.
+        - 최근 대화에서 이어받은 작업을 지칭하는 경우에도 해당 작업의 taskIdentifier를 넣으세요.
+        - 작업을 전혀 언급하지 않은 응답만 referencedTaskIdentifiers를 빈 배열로 두세요.
+        - referencedTaskIdentifiers에는 현재 작업 목록에 있는 UUID만 사용하세요.
+        - intent가 userStateChange이면 targetUserState에 working, resting, away 중 하나를 넣으세요.
+        - "다시 작업할게", "이제 시작할게", "업무로 돌아갈게"처럼 작업 재개 의미면 working입니다.
+        - "잠깐 쉴게", "쉬고 올게", "휴식할래"처럼 휴식 의미면 resting입니다.
+        - "자리 비울게", "외출할게", "잠시 자리를 뜰게"처럼 부재 의미면 away입니다.
+        - userStateChange 요청은 실제로 바로 반영하지 않고, reply에서 확인을 요청하세요.
+        - 사용자 상태가 불명확하면 targetUserState는 null, needsClarification은 true로 설정하세요.
+        - userStateChange가 아닌 경우 targetUserState는 null로 두세요.
+
+        targetStatus 값은 아래 중 하나만 사용하세요.
+        - pending
+        - inProgress
+        - completed
+        - deferred
+
+        reply 규칙:
+        - 사용자에게 보여줄 짧고 자연스러운 한국어 응답입니다.
+        - taskStatusChange이면 아직 변경이 완료됐다고 말하지 마세요.
+        - outOfScope이면 워키토키의 역할 범위를 설명하고 작업이나 메모로 남길 수 있다고 안내하세요.
+
+        반드시 JSON만 출력하세요.
+        markdown 코드블록과 추가 설명을 붙이지 마세요.
+
+        출력 형식:
+        {
+          "intent": "taskStatusChange",
+          "reply": "말씀하신 내용을 이렇게 이해했어요.",
+          "taskChanges": [
+            {
+              "taskIdentifier": "550E8400-E29B-41D4-A716-446655440000",
+              "taskTitle": "PPT 수정",
+              "targetStatus": "completed",
+              "confidence": 0.96,
+              "reason": "사용자가 해당 작업을 끝냈다고 표현함"
+            }
+          ],
+          "needsClarification": false,
+          "clarificationQuestion": null,
+          "clarificationType": null,
+          "candidateTaskTitles": [],
+          "candidateTaskIdentifiers": [],
+          "suggestedStatus": null,
+          "referencedTaskIdentifiers": ["550E8400-E29B-41D4-A716-446655440000"],
+          "targetUserState": null
+        }
+
+        확인 질문 예시:
+        {
+          "intent": "taskStatusChange",
+          "reply": "어떤 작업을 말씀하시는지 확인이 필요해요.",
+          "taskChanges": [],
+          "needsClarification": true,
+          "clarificationQuestion": "어떤 작업을 완료 처리할까요?",
+          "clarificationType": "selectTask",
+          "candidateTaskTitles": ["PPT 수정", "메일 보내기"],
+          "candidateTaskIdentifiers": [
+            "550E8400-E29B-41D4-A716-446655440000",
+            "550E8400-E29B-41D4-A716-446655440001"
+          ],
+          "suggestedStatus": "completed",
+          "referencedTaskIdentifiers": [
+            "550E8400-E29B-41D4-A716-446655440000",
+            "550E8400-E29B-41D4-A716-446655440001"
+          ],
+          "targetUserState": null
+        }
+
+        상태 선택 확인 질문 예시:
+        {
+          "intent": "taskStatusChange",
+          "reply": "변경할 상태를 선택해주세요.",
+          "taskChanges": [],
+          "needsClarification": true,
+          "clarificationQuestion": "PPT 수정 작업을 어떤 상태로 변경할까요?",
+          "clarificationType": "selectStatus",
+          "candidateTaskTitles": ["PPT 수정"],
+          "candidateTaskIdentifiers": ["550E8400-E29B-41D4-A716-446655440000"],
+          "suggestedStatus": null,
+          "referencedTaskIdentifiers": ["550E8400-E29B-41D4-A716-446655440000"],
+          "targetUserState": null
+        }
+
+        조회 응답 예시:
+        {
+          "intent": "taskQuery",
+          "reply": "마감이 지난 작업은 ㅏㅓ 1개예요.",
+          "taskChanges": [],
+          "needsClarification": false,
+          "clarificationQuestion": null,
+          "clarificationType": null,
+          "candidateTaskTitles": [],
+          "candidateTaskIdentifiers": [],
+          "suggestedStatus": null,
+          "referencedTaskIdentifiers": ["550E8400-E29B-41D4-A716-446655440000"],
+          "targetUserState": null
+        }
+
+        사용자 상태 변경 예시:
+        {
+          "intent": "userStateChange",
+          "reply": "쉬는 중 상태로 전환할까요?",
+          "taskChanges": [],
+          "needsClarification": false,
+          "clarificationQuestion": null,
+          "clarificationType": null,
+          "candidateTaskTitles": [],
+          "candidateTaskIdentifiers": [],
+          "suggestedStatus": null,
+          "referencedTaskIdentifiers": [],
+          "targetUserState": "resting"
+        }
+
+        [최근 대화]
+        \(conversationContext.isEmpty ? "없음" : conversationContext)
+
+        [현재 앱 컨텍스트]
+        \(context)
+
+        [현재 작업 목록]
+        \(taskList.isEmpty ? "없음" : taskList)
+
+        [사용자 최신 메시지]
+        \(userMessage)
+        """
+    }
+
     private func buildDailySummaryPrompt(log: String) -> String {
         """
         다음은 사용자의 오늘 macOS 작업 로그입니다.
@@ -349,11 +643,13 @@ final class LLMService {
     func interpretTaskResponse(
         userText: String,
         tasks: [TaskItem],
+        conversationContext: String = "",
         config: LLMConfig
     ) async throws -> [TaskResponseInterpretation] {
         let prompt = buildTaskResponseInterpretationPrompt(
             userText: userText,
-            tasks: tasks
+            tasks: tasks,
+            conversationContext: conversationContext
         )
 
         let content = try await generateText(
@@ -376,7 +672,11 @@ final class LLMService {
         )
 
         return parsed.results.compactMap { item in
-            guard let status = TaskStatus(rawValue: item.status) else {
+            guard let taskTitle = item.taskTitle?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !taskTitle.isEmpty,
+                  let statusRawValue = item.status,
+                  let status = TaskStatus(rawValue: statusRawValue) else {
                 return nil
             }
 
@@ -393,7 +693,7 @@ final class LLMService {
             }
 
             return TaskResponseInterpretation(
-                taskTitle: item.taskTitle,
+                taskTitle: taskTitle,
                 status: status,
                 responseText: item.responseText ?? userText,
                 deferredTo: deferredTo,
@@ -406,7 +706,8 @@ final class LLMService {
     
     private func buildTaskResponseInterpretationPrompt(
         userText: String,
-        tasks: [TaskItem]
+        tasks: [TaskItem],
+        conversationContext: String
     ) -> String {
         let taskList = tasks
             .filter { !$0.isCompleted }
@@ -489,6 +790,9 @@ final class LLMService {
         - 모레면 2
         - 특정 날짜를 정확히 해석하기 어려우면 1
         - deferred가 아니면 null
+        
+        [최근 대화 맥락]
+        \(conversationContext.isEmpty ? "없음" : conversationContext)
 
         [현재 할 일 목록]
         \(taskList)
@@ -603,98 +907,19 @@ final class LLMService {
         let safeSystemPrompt = limitedText(systemPrompt, maxCharacters: 4_000)
         let safeUserPrompt = limitedText(userPrompt, maxCharacters: 28_000)
 
-        if config.isClaudeConfigured {
-            do {
-                return try await callClaudeMessagesAPI(
-                    systemPrompt: safeSystemPrompt,
-                    userPrompt: safeUserPrompt,
-                    config: config,
-                    temperature: temperature,
-                    maxTokens: maxTokens
-                )
-            } catch {
-                if config.isLocalFallbackConfigured {
-                    return try await callOpenAICompatibleAPI(
-                        systemPrompt: safeSystemPrompt,
-                        userPrompt: safeUserPrompt,
-                        config: config,
-                        temperature: temperature
-                    )
-                }
-
-                throw error
-            }
+        guard config.isClaudeConfigured else {
+            throw LLMServiceError.missingAPIKey
         }
 
-        return try await callOpenAICompatibleAPI(
+        return try await callClaudeMessagesAPI(
             systemPrompt: safeSystemPrompt,
             userPrompt: safeUserPrompt,
             config: config,
-            temperature: temperature
+            temperature: temperature,
+            maxTokens: maxTokens
         )
     }
     
-    private func callOpenAICompatibleAPI(
-        systemPrompt: String,
-        userPrompt: String,
-        config: LLMConfig,
-        temperature: Double
-    ) async throws -> String {
-        guard config.isEnabled else {
-            throw LLMServiceError.serverError("로컬 LLM 설정이 비활성화되어 있습니다.")
-        }
-
-        guard let url = URL(string: config.endpoint) else {
-            throw LLMServiceError.invalidURL
-        }
-
-        let trimmedAPIKey = config.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let requestBody = LLMChatRequest(
-            model: config.modelName,
-            messages: [
-                LLMChatMessage(
-                    role: "system",
-                    content: systemPrompt
-                ),
-                LLMChatMessage(
-                    role: "user",
-                    content: userPrompt
-                )
-            ],
-            temperature: temperature
-        )
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        if !trimmedAPIKey.isEmpty {
-            request.setValue("Bearer \(trimmedAPIKey)", forHTTPHeaderField: "Authorization")
-        }
-
-        request.httpBody = try JSONEncoder().encode(requestBody)
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw LLMServiceError.invalidResponse
-        }
-
-        guard (200...299).contains(httpResponse.statusCode) else {
-            let message = String(data: data, encoding: .utf8) ?? "Unknown error"
-            throw LLMServiceError.serverError(message)
-        }
-
-        let decoded = try JSONDecoder().decode(LLMChatResponse.self, from: data)
-
-        guard let content = decoded.choices.first?.message.content,
-              !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            throw LLMServiceError.emptyResponse
-        }
-
-        return content
-    }
     
     private func callClaudeMessagesAPI(
         systemPrompt: String,
@@ -760,3 +985,4 @@ final class LLMService {
         return text
     }
 }
+

@@ -19,6 +19,9 @@ final class TaskResponseService {
         reason: String,
         source: String,
         confidence: Double? = nil,
+        batchID: UUID? = nil,
+        revertExpiresAt: Date? = nil,
+        notifyUser: Bool = true,
         modelContext: ModelContext
     ) {
         guard previous.status != task.status ||
@@ -30,6 +33,9 @@ final class TaskResponseService {
         }
 
         let log = TaskChangeLog(
+            taskIdentifier: task.stableID,
+            batchID: batchID,
+            revertExpiresAt: revertExpiresAt,
             taskTitle: task.title,
             changeType: "statusChanged",
             previousStatus: previous.status,
@@ -50,16 +56,18 @@ final class TaskResponseService {
         )
         modelContext.insert(log)
 
-        let notification = AppNotification(
-            title: "Task 상태 변경",
-            message: "\(task.title): \(previous.status) → \(task.status)",
-            kind: "taskChange",
-            source: source,
-            relatedTaskTitle: task.title,
-            suggestedStatus: task.status,
-            confidence: confidence
-        )
-        modelContext.insert(notification)
+        if notifyUser {
+            let notification = AppNotification(
+                title: "Task 상태 변경",
+                message: "\(task.title): \(previous.status) → \(task.status)",
+                kind: "taskChange",
+                source: source,
+                relatedTaskTitle: task.title,
+                suggestedStatus: task.status,
+                confidence: confidence
+            )
+            modelContext.insert(notification)
+        }
     }
 
     func markCompleted(
@@ -181,6 +189,10 @@ final class TaskResponseService {
     func applyInterpretation(
         _ interpretation: TaskResponseInterpretation,
         to task: TaskItem,
+        batchID: UUID? = nil,
+        source: String = "naturalLanguage",
+        notifyUser: Bool = true,
+        revertExpiresAt: Date? = nil,
         modelContext: ModelContext
     ) {
         switch interpretation.status {
@@ -189,6 +201,10 @@ final class TaskResponseService {
                 task: task,
                 responseText: interpretation.responseText,
                 confidence: interpretation.confidence,
+                batchID: batchID,
+                source: source,
+                notifyUser: notifyUser,
+                revertExpiresAt: revertExpiresAt,
                 modelContext: modelContext
             )
 
@@ -197,6 +213,10 @@ final class TaskResponseService {
                 task: task,
                 responseText: interpretation.responseText,
                 confidence: interpretation.confidence,
+                batchID: batchID,
+                source: source,
+                notifyUser: notifyUser,
+                revertExpiresAt: revertExpiresAt,
                 modelContext: modelContext
             )
 
@@ -205,6 +225,10 @@ final class TaskResponseService {
                 task: task,
                 responseText: interpretation.responseText,
                 confidence: interpretation.confidence,
+                batchID: batchID,
+                source: source,
+                notifyUser: notifyUser,
+                revertExpiresAt: revertExpiresAt,
                 modelContext: modelContext
             )
 
@@ -213,9 +237,12 @@ final class TaskResponseService {
                 task: task,
                 deferredTo: interpretation.deferredTo,
                 reason: "사용자 답변 자동 해석으로 연기 처리: \(interpretation.responseText)",
-                source: "naturalLanguage",
+                source: source,
                 responseText: interpretation.responseText,
                 confidence: interpretation.confidence,
+                batchID: batchID,
+                revertExpiresAt: revertExpiresAt,
+                notifyUser: notifyUser,
                 modelContext: modelContext
             )
 
@@ -231,8 +258,11 @@ final class TaskResponseService {
                 task: task,
                 previous: previous,
                 reason: "사용자 답변 해석 결과 확인 필요: \(interpretation.responseText)",
-                source: "naturalLanguage",
+                source: source,
                 confidence: interpretation.confidence,
+                batchID: batchID,
+                revertExpiresAt: revertExpiresAt,
+                notifyUser: notifyUser,
                 modelContext: modelContext
             )
         }
@@ -242,6 +272,10 @@ final class TaskResponseService {
         task: TaskItem,
         responseText: String,
         confidence: Double?,
+        batchID: UUID?,
+        source: String,
+        notifyUser: Bool,
+        revertExpiresAt: Date?,
         modelContext: ModelContext
     ) {
         let previous = snapshot(task)
@@ -259,8 +293,11 @@ final class TaskResponseService {
             task: task,
             previous: previous,
             reason: "사용자 답변 자동 해석으로 완료 처리: \(responseText)",
-            source: "naturalLanguage",
+            source: source,
             confidence: confidence,
+            batchID: batchID,
+            revertExpiresAt: revertExpiresAt,
+            notifyUser: notifyUser,
             modelContext: modelContext
         )
 
@@ -278,6 +315,10 @@ final class TaskResponseService {
         task: TaskItem,
         responseText: String,
         confidence: Double?,
+        batchID: UUID?,
+        source: String,
+        notifyUser: Bool,
+        revertExpiresAt: Date?,
         modelContext: ModelContext
     ) {
         let previous = snapshot(task)
@@ -295,8 +336,11 @@ final class TaskResponseService {
             task: task,
             previous: previous,
             reason: "사용자 답변 자동 해석으로 진행 중 처리: \(responseText)",
-            source: "naturalLanguage",
+            source: source,
             confidence: confidence,
+            batchID: batchID,
+            revertExpiresAt: revertExpiresAt,
+            notifyUser: notifyUser,
             modelContext: modelContext
         )
 
@@ -314,6 +358,10 @@ final class TaskResponseService {
         task: TaskItem,
         responseText: String,
         confidence: Double?,
+        batchID: UUID?,
+        source: String,
+        notifyUser: Bool,
+        revertExpiresAt: Date?,
         modelContext: ModelContext
     ) {
         let previous = snapshot(task)
@@ -331,8 +379,11 @@ final class TaskResponseService {
             task: task,
             previous: previous,
             reason: "사용자 답변 자동 해석으로 미완료 처리: \(responseText)",
-            source: "naturalLanguage",
+            source: source,
             confidence: confidence,
+            batchID: batchID,
+            revertExpiresAt: revertExpiresAt,
+            notifyUser: notifyUser,
             modelContext: modelContext
         )
 
@@ -353,6 +404,9 @@ final class TaskResponseService {
         source: String,
         responseText: String?,
         confidence: Double? = nil,
+        batchID: UUID? = nil,
+        revertExpiresAt: Date? = nil,
+        notifyUser: Bool = true,
         modelContext: ModelContext
     ) {
         let previous = snapshot(task)
@@ -378,6 +432,9 @@ final class TaskResponseService {
             reason: reason,
             source: source,
             confidence: confidence,
+            batchID: batchID,
+            revertExpiresAt: revertExpiresAt,
+            notifyUser: notifyUser,
             modelContext: modelContext
         )
 

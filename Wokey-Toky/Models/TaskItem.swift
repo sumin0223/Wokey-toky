@@ -10,6 +10,7 @@ import SwiftData
 
 @Model
 final class TaskItem {
+    var stableID: UUID?
     var title: String
     var detail: String?
 
@@ -54,6 +55,7 @@ final class TaskItem {
     var completedAt: Date?
 
     init(
+        stableID: UUID = UUID(),
         title: String,
         detail: String? = nil,
         source: String = "manual",
@@ -72,6 +74,7 @@ final class TaskItem {
         createdAt: Date = Date(),
         completedAt: Date? = nil
     ) {
+        self.stableID = stableID
         self.title = title
         self.detail = detail
         self.source = source

@@ -14,7 +14,7 @@ struct ContentView: View {
     @Query(sort: \AppNotification.createdAt, order: .reverse)
     private var appNotifications: [AppNotification]
 
-    @StateObject private var captureManager = ContextCaptureManager()
+    @EnvironmentObject private var captureManager: ContextCaptureManager
     @State private var selectedSection: AppSection = .today
     @State private var showChat = false
     @State private var showNotifications = false
@@ -37,9 +37,9 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .tint(WokeyDesign.blue)
         .wokeyPageBackground()
-        .environmentObject(captureManager)
         .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
+            ToolbarItemGroup(placement: .confirmationAction) {
+                workStateMenu
                 notificationButton
             }
         }
@@ -108,10 +108,114 @@ struct ContentView: View {
                 .zIndex(20)
             }
         }
-        .sheet(isPresented: $showChat) {
-            ChatView()
-                .environmentObject(captureManager)
-                .frame(minWidth: 720, minHeight: 620)
+        .overlay {
+            if showChat {
+                ZStack {
+                    Button {
+                        withAnimation(.easeOut(duration: 0.16)) {
+                            showChat = false
+                        }
+                    } label: {
+                        Rectangle()
+                            .fill(Color.black.opacity(0.18))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .ignoresSafeArea(.all)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    ZStack(alignment: .topTrailing) {
+                        ChatView()
+                            .environmentObject(captureManager)
+                            .frame(width: 760, height: 640)
+                            .background(Color(nsColor: .windowBackgroundColor))
+                            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                    .stroke(WokeyDesign.hairline, lineWidth: 1)
+                            }
+                            .shadow(color: Color.black.opacity(0.18), radius: 26, x: 0, y: 14)
+
+                        Button {
+                            withAnimation(.easeOut(duration: 0.16)) {
+                                showChat = false
+                            }
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(WokeyDesign.ink)
+                                .frame(width: 28, height: 28)
+                                .background(WokeyDesign.quietFill)
+                                .clipShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .keyboardShortcut(.cancelAction)
+                        .help("Chat 닫기")
+                        .padding(16)
+                    }
+                    .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                }
+                .zIndex(90)
+            }
+        }
+    }
+    private var workStateMenu: some View {
+        Menu {
+            ForEach(UserWorkState.allCases) { state in
+                Button {
+                    captureManager.setUserWorkState(
+                        state,
+                        modelContext: modelContext
+                    )
+                } label: {
+                    Label {
+                        Text(state.displayName)
+                    } icon: {
+                        if captureManager.userWorkState == state {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(workStateIndicatorColor)
+                    .frame(width: 8, height: 8)
+
+                Text(captureManager.userWorkState.displayName)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(WokeyDesign.ink)
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(WokeyDesign.muted)
+            }
+            .padding(.horizontal, 11)
+            .frame(height: 34)
+            .background(WokeyDesign.panel)
+            .clipShape(Capsule())
+            .overlay {
+                Capsule()
+                    .stroke(WokeyDesign.hairline, lineWidth: 1)
+            }
+            .contentShape(Capsule())
+            .accessibilityLabel("현재 사용자 상태")
+            .accessibilityValue(captureManager.userWorkState.displayName)
+        }
+        .menuStyle(.borderlessButton)
+        .help("사용자 상태 변경")
+    }
+
+    private var workStateIndicatorColor: Color {
+        switch captureManager.userWorkState {
+        case .working:
+            return WokeyDesign.blue
+        case .resting:
+            return .orange
+        case .away:
+            return WokeyDesign.muted
         }
     }
 
@@ -512,9 +616,6 @@ struct ContentView: View {
         case .briefing:
             BriefingView()
 
-        case .chat:
-            ChatView()
-
         case .summary:
             SummaryView()
 
@@ -552,7 +653,6 @@ private enum AppSection: String, CaseIterable, Identifiable {
     case schedule
     case importData
     case briefing
-    case chat
     case summary
     case settings
     case privacy
@@ -573,8 +673,6 @@ private enum AppSection: String, CaseIterable, Identifiable {
             return "Import"
         case .briefing:
             return "Briefing"
-        case .chat:
-            return "Chat"
         case .summary:
             return "Summary"
         case .settings:
@@ -596,8 +694,6 @@ private enum AppSection: String, CaseIterable, Identifiable {
             return "square.and.arrow.down"
         case .briefing:
             return "text.bubble"
-        case .chat:
-            return "bubble.left.and.text.bubble.right"
         case .summary:
             return "chart.pie"
         case .settings:

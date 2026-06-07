@@ -11,6 +11,7 @@ import UserNotifications
 
 @main
 struct Wokey_TokyApp: App {
+    @StateObject private var captureManager = ContextCaptureManager()
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             ActivityEvent.self,
@@ -29,6 +30,7 @@ struct Wokey_TokyApp: App {
             KakaoTalkSettings.self,
             AppNotification.self,
             TaskChangeLog.self,
+            UserWorkStateSession.self,
         ])
 
         let modelConfiguration = ModelConfiguration(
@@ -55,11 +57,13 @@ struct Wokey_TokyApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(captureManager)
         }
         .modelContainer(sharedModelContainer)
 
         MenuBarExtra("🐰", systemImage: "hare.fill") {
             MenuBarView()
+                .environmentObject(captureManager)
         }
         .menuBarExtraStyle(.window)
         .modelContainer(sharedModelContainer)

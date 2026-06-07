@@ -10,6 +10,7 @@ import SwiftData
 
 struct MenuBarView: View {
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var captureManager: ContextCaptureManager
 
     @Query(sort: \TaskItem.createdAt, order: .reverse)
     private var tasks: [TaskItem]
@@ -30,6 +31,8 @@ struct MenuBarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             headerSection
+
+            workStateSection
 
             Divider()
 
@@ -65,6 +68,69 @@ struct MenuBarView: View {
             Text("\(activeTasks.count)개 남음")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    private var workStateSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("현재 상태")
+                    .font(.subheadline)
+                    .bold()
+
+                Spacer()
+
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(workStateIndicatorColor)
+                        .frame(width: 8, height: 8)
+
+                    Text(captureManager.userWorkState.displayName)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                }
+            }
+
+            HStack(spacing: 6) {
+                ForEach(UserWorkState.allCases) { state in
+                    Button(state.displayName) {
+                        captureManager.setUserWorkState(
+                            state,
+                            modelContext: modelContext
+                        )
+                    }
+                    .disabled(captureManager.userWorkState == state)
+                }
+            }
+            .font(.caption)
+
+            Text(workStateDescription)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var workStateIndicatorColor: Color {
+        switch captureManager.userWorkState {
+        case .working:
+            return .blue
+        case .resting:
+            return .orange
+        case .away:
+            return .secondary
+        }
+    }
+
+    private var workStateDescription: String {
+        switch captureManager.userWorkState {
+        case .working:
+            return captureManager.isCapturing
+                ? "활동 기록을 수집하고 있습니다."
+                : "현재 활동 기록은 꺼져 있습니다."
+        case .resting:
+            return "휴식 중에는 활동 기록을 일시정지합니다."
+        case .away:
+            return "자리 비움 중에는 활동 기록을 일시정지합니다."
         }
     }
 
