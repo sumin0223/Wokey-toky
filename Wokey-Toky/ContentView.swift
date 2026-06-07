@@ -566,7 +566,7 @@ private enum AppSection: String, CaseIterable, Identifiable {
         case .today:
             return "Today"
         case .activity:
-            return "오늘의 활동"
+            return "Activity"
         case .schedule:
             return "Schedule"
         case .importData:

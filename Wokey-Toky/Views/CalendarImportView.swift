@@ -17,40 +17,30 @@ struct CalendarImportView: View {
     @StateObject private var calendarService = CalendarService()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            headerSection
-
-            permissionSection
-
-            eventListSection
+        ScrollView {
+            VStack(alignment: .leading, spacing: WokeyDesign.sectionSpacing) {
+                permissionSection
+                eventListSection
+            }
+            .padding(WokeyDesign.pagePadding)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .padding()
         .onAppear {
             calendarService.refreshAuthorizationStatus()
-        }
-    }
-
-    private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Calendar Import")
-                .font(.largeTitle)
-                .bold()
-
-            Text("macOS 캘린더 앱에 등록된 일정과 마감일을 Wokey-Toky Task로 가져옵니다.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
         }
     }
 
     private var permissionSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Circle()
-                    .frame(width: 10, height: 10)
-                    .foregroundStyle(calendarService.isAuthorized ? .green : .orange)
-
-                Text("캘린더 권한: \(calendarService.authorizationText)")
-                    .font(.headline)
+                Label(
+                    "캘린더 권한: \(calendarService.authorizationText)",
+                    systemImage: calendarService.isAuthorized
+                        ? "checkmark.circle.fill"
+                        : "exclamationmark.circle"
+                )
+                .font(.headline)
+                .foregroundStyle(calendarService.isAuthorized ? WokeyDesign.blue : WokeyDesign.muted)
 
                 Spacer()
 
@@ -69,23 +59,32 @@ struct CalendarImportView: View {
             if let errorMessage = calendarService.errorMessage {
                 Text(errorMessage)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(WokeyDesign.active)
             }
 
             Text("Google Calendar는 macOS 캘린더 앱에 계정을 추가해두면 함께 읽을 수 있습니다.")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(WokeyDesign.muted)
         }
-        .padding()
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .wokeyPanel()
     }
 
     private var eventListSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("캘린더 이벤트")
-                .font(.title2)
-                .bold()
+            HStack {
+                Text("캘린더 이벤트")
+                    .font(.title2)
+                    .bold()
+                    .foregroundStyle(WokeyDesign.ink)
+
+                Spacer()
+
+                if !calendarService.events.isEmpty {
+                    Text("\(calendarService.events.count)개")
+                        .font(.caption)
+                        .foregroundStyle(WokeyDesign.muted)
+                }
+            }
 
             if calendarService.events.isEmpty {
                 ContentUnavailableView(
@@ -93,12 +92,17 @@ struct CalendarImportView: View {
                     systemImage: "calendar",
                     description: Text("권한을 허용한 뒤 오늘/내일 일정 불러오기를 눌러보세요.")
                 )
+                .frame(maxWidth: .infinity, minHeight: 240)
             } else {
-                List(calendarService.events) { event in
-                    eventRow(event)
+                LazyVStack(spacing: 10) {
+                    ForEach(calendarService.events) { event in
+                        eventRow(event)
+                    }
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .wokeyPanel()
     }
 
     private func eventRow(_ event: CalendarEventItem) -> some View {
@@ -106,6 +110,7 @@ struct CalendarImportView: View {
             HStack {
                 Text(event.title)
                     .font(.headline)
+                    .foregroundStyle(WokeyDesign.ink)
 
                 Spacer()
 
@@ -113,38 +118,38 @@ struct CalendarImportView: View {
                     .font(.caption2)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .background(.quaternary)
+                    .background(WokeyDesign.statusFill)
                     .clipShape(Capsule())
             }
 
             Text(eventTimeText(event))
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(WokeyDesign.muted)
 
             if let location = event.location,
                !location.isEmpty {
-                Text("위치: \(location)")
+                Label(location, systemImage: "mappin.and.ellipse")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
             }
 
             if let notes = event.notes,
                !notes.isEmpty {
                 Text(notes)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
                     .lineLimit(2)
             }
 
             if let url = event.url {
                 Text(url.absoluteString)
                     .font(.caption)
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(WokeyDesign.blue)
                     .lineLimit(1)
             }
 
             HStack {
-                Button(isAlreadyImported(event) ? "이미 가져옴" : "Task로 가져오기") {
+                Button(isAlreadyImported(event) ? "이미 가져옴" : "일정으로 가져오기") {
                     importEventAsTask(event)
                 }
                 .disabled(isAlreadyImported(event))
@@ -152,7 +157,13 @@ struct CalendarImportView: View {
                 Spacer()
             }
         }
-        .padding(.vertical, 6)
+        .padding(14)
+        .background(WokeyDesign.quietFill)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(WokeyDesign.hairline, lineWidth: 1)
+        }
     }
 
     private func importEventAsTask(_ event: CalendarEventItem) {
@@ -175,8 +186,37 @@ struct CalendarImportView: View {
             externalIdentifier: event.id,
             relatedKeywords: buildKeywords(from: event)
         )
+        task.scheduleType = ScheduleType.event.rawValue
 
         modelContext.insert(task)
+
+        let log = TaskChangeLog(
+            taskTitle: task.title,
+            changeType: "eventCreated",
+            previousStatus: nil,
+            newStatus: task.status,
+            previousIsCompleted: false,
+            newIsCompleted: task.isCompleted,
+            previousDueAt: nil,
+            newDueAt: task.dueAt,
+            previousTitle: nil,
+            newTitle: task.title,
+            reason: "Calendar 일정을 Schedule로 가져왔습니다.",
+            source: "appleCalendar",
+            confidence: nil
+        )
+        modelContext.insert(log)
+
+        let notification = AppNotification(
+            title: "새 일정이 추가되었습니다",
+            message: "\(task.title) · 출처: Calendar",
+            kind: "taskCandidate",
+            source: "appleCalendar",
+            relatedTaskTitle: task.title
+        )
+        modelContext.insert(notification)
+
+        try? modelContext.save()
     }
 
     private func isAlreadyImported(_ event: CalendarEventItem) -> Bool {

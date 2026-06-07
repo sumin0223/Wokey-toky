@@ -69,18 +69,12 @@ enum KakaoTalkStorageMode: String, CaseIterable, Identifiable {
 }
 
 enum KakaoTalkLLMProcessingMode: String, CaseIterable, Identifiable {
-    case localOnly
     case allowExternalAPI
 
     var id: String { rawValue }
 
     var displayName: String {
-        switch self {
-        case .localOnly:
-            return "로컬 Ollama만 사용"
-        case .allowExternalAPI:
-            return "외부 API 허용"
-        }
+        "Claude API 사용"
     }
 }
 
@@ -108,7 +102,7 @@ final class KakaoTalkSettings {
         analysisScope: String = KakaoTalkAnalysisScope.selectedChats.rawValue,
         analysisInterval: String = KakaoTalkAnalysisInterval.manual.rawValue,
         storageMode: String = KakaoTalkStorageMode.evidenceSnippetOnly.rawValue,
-        llmProcessingMode: String = KakaoTalkLLMProcessingMode.localOnly.rawValue,
+        llmProcessingMode: String = KakaoTalkLLMProcessingMode.allowExternalAPI.rawValue,
         keywordsText: String = "과제,회의,마감,제출,보내줘,공유,내일,오늘,까지",
         selectedChatNamesText: String = "",
         createdAt: Date = Date(),

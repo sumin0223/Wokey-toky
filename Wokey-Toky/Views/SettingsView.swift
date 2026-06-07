@@ -717,7 +717,6 @@ struct SettingsView: View {
             config.modelName = ""
             config.apiKey = ""
             config.isEnabled = false
-            config.isLocalFallbackEnabled = false
             config.updatedAt = Date()
         } else {
             let config = LLMConfig(
@@ -729,8 +728,7 @@ struct SettingsView: View {
                 endpoint: "",
                 modelName: "",
                 apiKey: "",
-                isEnabled: false,
-                isLocalFallbackEnabled: false
+                isEnabled: false
             )
 
             modelContext.insert(config)

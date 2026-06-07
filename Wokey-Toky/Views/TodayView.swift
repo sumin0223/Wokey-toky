@@ -541,11 +541,35 @@ struct TodayView: View {
     }
 
     private var tasksNeedingConfirmation: [TaskItem] {
-        tasks
-            .filter {
-                !$0.isCompleted &&
-                scheduleType($0) == .task &&
-                ($0.needsUserConfirmation || $0.status == TaskStatus.uncertain.rawValue)
+        let calendar = Calendar.current
+        let startOfTomorrow = calendar.date(
+            byAdding: .day,
+            value: 1,
+            to: calendar.startOfDay(for: Date())
+        ) ?? Date()
+
+        return tasks
+            .filter { task in
+                guard !task.isCompleted,
+                      scheduleType(task) == .task else {
+                    return false
+                }
+
+                if task.needsUserConfirmation ||
+                    task.status == TaskStatus.uncertain.rawValue {
+                    return true
+                }
+
+                guard task.status == TaskStatus.pending.rawValue else {
+                    return false
+                }
+
+                let isDueOrOverdue = task.dueAt.map { $0 < startOfTomorrow } == true
+                let startsToday = task.plannedStartAt.map {
+                    calendar.isDateInToday($0)
+                } == true
+
+                return isDueOrOverdue || startsToday
             }
             .sorted(by: taskSort)
     }

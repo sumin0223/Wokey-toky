@@ -47,8 +47,8 @@ final class LLMConfig {
         claudeAPIKey: String = "",
         isClaudeEnabled: Bool = true,
 
-        endpoint: String = "http://127.0.0.1:11434/v1/chat/completions",
-        modelName: String = "qwen2.5:7b",
+        endpoint: String = "",
+        modelName: String = "",
         apiKey: String = "",
         isEnabled: Bool = false,
         isLocalFallbackEnabled: Bool = false,
@@ -73,7 +73,7 @@ final class LLMConfig {
     }
 
     var isLocalFallbackConfigured: Bool {
-        isLocalFallbackEnabledResolved && isEnabled
+        false
     }
 
     var claudeEndpointResolved: String {
@@ -91,6 +91,6 @@ final class LLMConfig {
     }
 
     var isLocalFallbackEnabledResolved: Bool {
-        isLocalFallbackEnabled ?? false
+        false
     }
 }

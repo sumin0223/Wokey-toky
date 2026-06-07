@@ -36,13 +36,12 @@ struct AppleNotesImportView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                headerSection
+            VStack(alignment: .leading, spacing: WokeyDesign.sectionSpacing) {
                 actionSection
                 notesSection
                 candidateSection
             }
-            .padding()
+            .padding(WokeyDesign.pagePadding)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .overlay(alignment: .top) {
@@ -50,8 +49,24 @@ struct AppleNotesImportView: View {
                 InAppToastView(message: toastMessage)
             }
         }
-        .sheet(item: $editingCandidate) { candidate in
-            candidateEditSheet(candidate)
+        .overlay {
+            if let candidate = editingCandidate {
+                ZStack {
+                    Button {
+                        editingCandidate = nil
+                    } label: {
+                        Rectangle()
+                            .fill(Color.black.opacity(0.18))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    candidateEditSheet(candidate)
+                        .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                }
+                .zIndex(20)
+            }
         }
         .confirmationDialog(
             "이 후보를 삭제할까요?",
@@ -61,6 +76,7 @@ struct AppleNotesImportView: View {
             Button("후보 삭제", role: .destructive) {
                 if let candidate = candidatePendingDelete {
                     modelContext.delete(candidate)
+                    try? modelContext.save()
                     showToast("후보를 삭제했습니다.")
                 }
                 candidatePendingDelete = nil
@@ -74,17 +90,6 @@ struct AppleNotesImportView: View {
         }
     }
 
-    private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Apple Notes Import")
-                .font(.largeTitle)
-                .bold()
-
-            Text("Apple 기본 메모 앱의 텍스트를 읽어 할 일 후보를 추출합니다.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-    }
 
     private var actionSection: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -107,20 +112,18 @@ struct AppleNotesImportView: View {
             if let errorMessage {
                 Text(errorMessage)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(WokeyDesign.active)
             }
 
             Text("메모 목록을 불러오는 단계에서는 Claude를 호출하지 않습니다. Claude API는 사용자가 선택한 메모에서 후보 추출을 누를 때만 사용됩니다.")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(WokeyDesign.muted)
 
             Text("기본 화면에는 최근/상위 30개만 보여주고, 검색으로 필요한 메모를 좁혀 선택할 수 있습니다.")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(WokeyDesign.muted)
         }
-        .padding()
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .wokeyPanel()
     }
 
     private var notesSection: some View {
@@ -135,7 +138,7 @@ struct AppleNotesImportView: View {
                 if !selectedNoteIDs.isEmpty {
                     Text("선택됨: \(selectedNoteIDs.count)개")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(WokeyDesign.muted)
                 }
             }
 
@@ -144,7 +147,7 @@ struct AppleNotesImportView: View {
 
             if notes.isEmpty {
                 Text("아직 불러온 메모가 없습니다.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
             } else {
                 let displayNotes = filteredNotes
 
@@ -160,31 +163,38 @@ struct AppleNotesImportView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .wokeyPanel()
     }
 
     private func noteCard(_ note: AppleNoteItem) -> some View {
         let isSelected = selectedNoteIDs.contains(note.id)
 
         return Button {
-            if selectedNoteIDs.contains(note.id) {
-                selectedNoteIDs.remove(note.id)
-            } else {
-                selectedNoteIDs.insert(note.id)
+            withAnimation(.snappy(duration: 0.18)) {
+                if selectedNoteIDs.contains(note.id) {
+                    selectedNoteIDs.remove(note.id)
+                } else {
+                    selectedNoteIDs.insert(note.id)
+                }
             }
         } label: {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(note.title)
                         .font(.headline)
+                        .foregroundStyle(WokeyDesign.ink)
 
                     Spacer()
 
                     if isSelected {
-                        Text("선택됨")
+                        Label("선택됨", systemImage: "checkmark")
                             .font(.caption2)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(.background)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(WokeyDesign.ink)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4)
+                            .background(WokeyDesign.selection)
                             .clipShape(Capsule())
                     }
                 }
@@ -193,20 +203,23 @@ struct AppleNotesImportView: View {
                    !modifiedAtText.isEmpty {
                     Text("수정일: \(modifiedAtText)")
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(WokeyDesign.muted)
                 }
 
                 Text(note.previewText)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
                     .lineLimit(4)
                     .textSelection(.enabled)
             }
-            .padding()
+            .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(isSelected ? Color.blue.opacity(0.15)
-                        : Color.secondary.opacity(0.12))
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .background(isSelected ? WokeyDesign.selection : WokeyDesign.quietFill)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(isSelected ? WokeyDesign.blue.opacity(0.35) : WokeyDesign.hairline, lineWidth: 1)
+            }
         }
         .buttonStyle(.plain)
     }
@@ -223,13 +236,15 @@ struct AppleNotesImportView: View {
 
             if noteCandidates.isEmpty {
                 Text("Apple Notes에서 추출된 후보가 없습니다.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
             } else {
                 ForEach(noteCandidates) { candidate in
                     candidateCard(candidate)
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .wokeyPanel()
     }
 
     private func candidateCard(_ candidate: TaskCandidate) -> some View {
@@ -244,7 +259,7 @@ struct AppleNotesImportView: View {
                     .font(.caption2)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .background(.quaternary)
+                    .background(WokeyDesign.statusFill)
                     .clipShape(Capsule())
             }
 
@@ -252,14 +267,14 @@ struct AppleNotesImportView: View {
                !detail.isEmpty {
                 Text(detail)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
             }
 
             if let dueText = candidate.dueText,
                !dueText.isEmpty {
                 Text("추정 시간/마감: \(dueText)")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
             }
 
             HStack {
@@ -281,9 +296,13 @@ struct AppleNotesImportView: View {
             }
             .font(.caption)
         }
-        .padding()
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding(16)
+        .background(WokeyDesign.quietFill)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(WokeyDesign.hairline, lineWidth: 1)
+        }
     }
 
     private var filteredAllNotes: [AppleNoteItem] {
@@ -419,6 +438,7 @@ struct AppleNotesImportView: View {
             dueAt: candidate.suggestedDueAt,
             relatedKeywords: candidate.title
         )
+        task.scheduleType = ScheduleType.task.rawValue
 
         modelContext.insert(task)
         candidate.isImported = true
@@ -449,6 +469,7 @@ struct AppleNotesImportView: View {
             confidence: candidate.confidence
         )
         modelContext.insert(notification)
+        try? modelContext.save()
         showToast("Task로 추가했습니다: \(task.title)")
     }
 
@@ -461,9 +482,28 @@ struct AppleNotesImportView: View {
 
     private func candidateEditSheet(_ candidate: TaskCandidate) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("할 일 후보 수정")
-                .font(.title2)
-                .bold()
+            HStack {
+                Text("할 일 후보 수정")
+                    .font(.title2)
+                    .bold()
+                    .foregroundStyle(WokeyDesign.ink)
+
+                Spacer()
+
+                Button {
+                    editingCandidate = nil
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(WokeyDesign.ink)
+                        .frame(width: 28, height: 28)
+                        .background(WokeyDesign.quietFill)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.cancelAction)
+                .help("닫기")
+            }
 
             TextField("제목", text: $editingCandidateTitle)
                 .textFieldStyle(.roundedBorder)
@@ -471,12 +511,12 @@ struct AppleNotesImportView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("상세 설명")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
 
                 TextEditor(text: $editingCandidateDetail)
                     .frame(minHeight: 120)
                     .padding(8)
-                    .background(.quaternary)
+                    .background(WokeyDesign.quietFill)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             }
 
@@ -488,6 +528,7 @@ struct AppleNotesImportView: View {
                     candidate.title = editingCandidateTitle.trimmingCharacters(in: .whitespacesAndNewlines)
                     candidate.detail = editingCandidateDetail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editingCandidateDetail
                     candidate.dueText = editingCandidateDueText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editingCandidateDueText
+                    try? modelContext.save()
                     editingCandidate = nil
                     showToast("후보를 수정했습니다.")
                 }
@@ -500,8 +541,15 @@ struct AppleNotesImportView: View {
                 Spacer()
             }
         }
-        .padding()
-        .frame(width: 540, height: 380)
+        .padding(24)
+        .frame(width: 520, height: 360)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(WokeyDesign.hairline, lineWidth: 1)
+        }
+        .shadow(color: Color.black.opacity(0.18), radius: 24, x: 0, y: 12)
     }
 
     private func showToast(_ message: String) {

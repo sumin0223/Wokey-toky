@@ -45,43 +45,59 @@ struct KakaoTalkImportView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                headerSection
+            VStack(alignment: .leading, spacing: WokeyDesign.sectionSpacing) {
                 settingsSummarySection
                 connectionSection
                 chatRoomSection
                 messageSection
                 candidateSection
             }
-            .padding()
+            .padding(WokeyDesign.pagePadding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .sheet(item: $editingCandidate) { candidate in
-                candidateEditSheet(candidate)
+        }
+        .overlay(alignment: .top) {
+            if let toastMessage {
+                InAppToastView(message: toastMessage)
             }
-            .overlay(alignment: .top) {
-                if let toastMessage {
-                    InAppToastView(message: toastMessage)
-                }
-            }
-            .confirmationDialog(
-                "이 후보를 삭제할까요?",
-                isPresented: $showCandidateDeleteConfirmation,
-                titleVisibility: .visible
-            ) {
-                Button("후보 삭제", role: .destructive) {
-                    if let candidate = candidatePendingDelete {
-                        modelContext.delete(candidate)
-                        showToast("후보를 삭제했습니다.")
+        }
+        .overlay {
+            if let candidate = editingCandidate {
+                ZStack {
+                    Button {
+                        editingCandidate = nil
+                    } label: {
+                        Rectangle()
+                            .fill(Color.black.opacity(0.18))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .contentShape(Rectangle())
                     }
-                    candidatePendingDelete = nil
-                }
+                    .buttonStyle(.plain)
 
-                Button("취소", role: .cancel) {
-                    candidatePendingDelete = nil
+                    candidateEditSheet(candidate)
+                        .transition(.opacity.combined(with: .scale(scale: 0.97)))
                 }
-            } message: {
-                Text("삭제한 후보는 Task로 가져올 수 없습니다. 원문 메시지를 다시 읽으면 새로 추출할 수 있습니다.")
+                .zIndex(20)
             }
+        }
+        .confirmationDialog(
+            "이 후보를 삭제할까요?",
+            isPresented: $showCandidateDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("후보 삭제", role: .destructive) {
+                if let candidate = candidatePendingDelete {
+                    modelContext.delete(candidate)
+                    try? modelContext.save()
+                    showToast("후보를 삭제했습니다.")
+                }
+                candidatePendingDelete = nil
+            }
+
+            Button("취소", role: .cancel) {
+                candidatePendingDelete = nil
+            }
+        } message: {
+            Text("삭제한 후보는 Task로 가져올 수 없습니다. 원문 메시지를 다시 읽으면 새로 추출할 수 있습니다.")
         }
         .onAppear {
             applySettingsDefaults()
@@ -90,9 +106,28 @@ struct KakaoTalkImportView: View {
     
     private func candidateEditSheet(_ candidate: TaskCandidate) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("할 일 후보 수정")
-                .font(.title2)
-                .bold()
+            HStack {
+                Text("할 일 후보 수정")
+                    .font(.title2)
+                    .bold()
+                    .foregroundStyle(WokeyDesign.ink)
+
+                Spacer()
+
+                Button {
+                    editingCandidate = nil
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(WokeyDesign.ink)
+                        .frame(width: 28, height: 28)
+                        .background(WokeyDesign.quietFill)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.cancelAction)
+                .help("닫기")
+            }
 
             TextField("제목", text: $editingCandidateTitle)
                 .textFieldStyle(.roundedBorder)
@@ -100,12 +135,12 @@ struct KakaoTalkImportView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("상세")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
 
                 TextEditor(text: $editingCandidateDetail)
                     .frame(minHeight: 120)
                     .padding(8)
-                    .background(.quaternary)
+                    .background(WokeyDesign.quietFill)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             }
 
@@ -114,12 +149,14 @@ struct KakaoTalkImportView: View {
 
             HStack {
                 Button("저장") {
-                    candidate.title = editingCandidateTitle
-                    candidate.detail = editingCandidateDetail.isEmpty ? nil : editingCandidateDetail
-                    candidate.dueText = editingCandidateDueText.isEmpty ? nil : editingCandidateDueText
+                    candidate.title = editingCandidateTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                    candidate.detail = editingCandidateDetail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editingCandidateDetail
+                    candidate.dueText = editingCandidateDueText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editingCandidateDueText
+                    try? modelContext.save()
                     editingCandidate = nil
                     showToast("후보를 수정했습니다.")
                 }
+                .disabled(editingCandidateTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
                 Button("취소") {
                     editingCandidate = nil
@@ -128,8 +165,15 @@ struct KakaoTalkImportView: View {
                 Spacer()
             }
         }
-        .padding()
+        .padding(24)
         .frame(width: 520, height: 360)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(WokeyDesign.hairline, lineWidth: 1)
+        }
+        .shadow(color: Color.black.opacity(0.18), radius: 24, x: 0, y: 12)
     }
     
     private func startEditingCandidate(_ candidate: TaskCandidate) {
@@ -139,60 +183,55 @@ struct KakaoTalkImportView: View {
         editingCandidateDueText = candidate.dueText ?? ""
     }
 
-    private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("KakaoTalk Import")
-                .font(.largeTitle)
-                .bold()
 
-            Text("선택한 카카오톡 채팅방의 최근 메시지에서 할 일 후보를 추출합니다.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-    }
 
     private var settingsSummarySection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("연동 설정 요약")
-                .font(.title2)
-                .bold()
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("개인정보 및 Claude 분석")
+                        .font(.title2)
+                        .bold()
+                        .foregroundStyle(WokeyDesign.ink)
 
-            if let settings = currentKakaoSettings {
-                Text("연동 상태: \(settings.isEnabled ? "사용" : "꺼짐")")
-                Text("개인정보 안내 동의: \(settings.hasAcceptedPrivacyNotice ? "완료" : "필요")")
-                Text("분석 범위: \(scopeDisplayName(settings.analysisScope))")
-                Text("분석 주기: \(intervalDisplayName(settings.analysisInterval))")
-                Text("저장 방식: \(storageDisplayName(settings.storageMode))")
-                Text("LLM 처리: \(llmModeDisplayName(settings.llmProcessingMode))")
-
-                if !settings.isEnabled || !settings.hasAcceptedPrivacyNotice {
-                    Text("메시지 분석을 사용하려면 개인정보 안내에 동의하고 카카오톡 연동을 켜주세요.")
+                    Text("선택한 채팅방의 메시지만 읽고, 후보 추출을 실행할 때만 Claude API를 호출합니다.")
                         .font(.caption)
-                        .foregroundStyle(.orange)
-
-                    Button("개인정보 안내에 동의하고 연동 켜기") {
-                        enableKakaoImport()
-                    }
+                        .foregroundStyle(WokeyDesign.muted)
                 }
 
-                if settings.llmProcessingMode == KakaoTalkLLMProcessingMode.allowExternalAPI.rawValue {
-                    Text("외부 API 사용이 허용되어 있습니다. 선택한 메시지 일부가 외부 LLM 서버로 전송될 수 있습니다.")
+                Spacer()
+
+                if canUseKakaoImport {
+                    Label("연동됨", systemImage: "checkmark.circle.fill")
                         .font(.caption)
-                        .foregroundStyle(.red)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(WokeyDesign.ink)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(WokeyDesign.selection)
+                        .clipShape(Capsule())
                 }
-            } else {
-                Text("카카오톡 메시지는 선택한 채팅방에서만 읽으며, 후보 추출 전에 연동 동의가 필요합니다.")
-                    .foregroundStyle(.secondary)
+            }
+
+            if !canUseKakaoImport {
+                Text("메시지 분석을 시작하려면 읽기 전용 분석과 선택 메시지의 Claude 전송에 동의해야 합니다.")
+                    .font(.caption)
+                    .foregroundStyle(WokeyDesign.muted)
 
                 Button("개인정보 안내에 동의하고 연동 시작") {
                     enableKakaoImport()
                 }
+            } else if let settings = currentKakaoSettings {
+                HStack(spacing: 16) {
+                    Label(scopeDisplayName(settings.analysisScope), systemImage: "text.magnifyingglass")
+                    Label(storageDisplayName(settings.storageMode), systemImage: "externaldrive")
+                    Label("Claude", systemImage: "sparkles")
+                }
+                .font(.caption)
+                .foregroundStyle(WokeyDesign.muted)
             }
         }
-        .font(.caption)
-        .padding()
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .wokeyPanel()
     }
 
     private var connectionSection: some View {
@@ -200,41 +239,44 @@ struct KakaoTalkImportView: View {
             Text("연결 상태")
                 .font(.title2)
                 .bold()
+                .foregroundStyle(WokeyDesign.ink)
 
             HStack {
-                Button(isChecking ? "확인 중..." : "kakaocli 카카오톡 핼퍼 확인") {
+                Button(isChecking ? "확인 중..." : "KakaoTalk helper 확인") {
                     Task {
                         await checkAvailability()
                     }
                 }
                 .disabled(isChecking)
 
-                Text(isAvailable ? "사용 가능" : "확인 필요")
-                    .foregroundStyle(isAvailable ? .green : .secondary)
+                Label(
+                    isAvailable ? "사용 가능" : "확인 필요",
+                    systemImage: isAvailable ? "checkmark.circle.fill" : "exclamationmark.circle"
+                )
+                .font(.caption)
+                .foregroundStyle(isAvailable ? WokeyDesign.blue : WokeyDesign.muted)
 
                 Spacer()
             }
 
-            Text("필요 조건: KakaoTalk for Mac, k-skill helper(kakaocli, Full Disk Access, 필요 시 Accessibility 권한")
+            Text("필요 조건: KakaoTalk for Mac, k-skill helper(kakaocli), Full Disk Access, 필요 시 Accessibility 권한")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(WokeyDesign.muted)
 
             if let statusMessage {
                 Text(statusMessage)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
             }
 
             if let errorMessage {
                 Text(errorMessage)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(WokeyDesign.active)
                     .textSelection(.enabled)
             }
         }
-        .padding()
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .wokeyPanel()
     }
 
     private var chatRoomSection: some View {
@@ -260,43 +302,56 @@ struct KakaoTalkImportView: View {
 
             if chatRooms.isEmpty {
                 Text("아직 불러온 채팅방이 없습니다.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
             } else {
                 ForEach(chatRooms) { room in
                     chatRoomCard(room)
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .wokeyPanel()
     }
 
     private func chatRoomCard(_ room: KakaoTalkChatRoom) -> some View {
-        Button {
-            if selectedChatRooms.contains(room) {
-                selectedChatRooms.remove(room)
-            } else {
-                selectedChatRooms.insert(room)
+        let isSelected = selectedChatRooms.contains(room)
+
+        return Button {
+            withAnimation(.snappy(duration: 0.18)) {
+                if isSelected {
+                    selectedChatRooms.remove(room)
+                } else {
+                    selectedChatRooms.insert(room)
+                }
+                messages = []
             }
-            messages = []
         } label: {
             HStack {
                 Text(room.name)
                     .font(.headline)
+                    .foregroundStyle(WokeyDesign.ink)
 
                 Spacer()
 
-                if selectedChatRooms.contains(room) {
-                    Text("선택됨")
+                if isSelected {
+                    Label("선택됨", systemImage: "checkmark")
                         .font(.caption2)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(.background)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(WokeyDesign.ink)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(WokeyDesign.selection)
                         .clipShape(Capsule())
                 }
             }
-            .padding()
+            .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(selectedChatRooms.contains(room) ? Color.blue.opacity(0.12) : Color.secondary.opacity(0.12))
-            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .background(isSelected ? WokeyDesign.selection : WokeyDesign.quietFill)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(isSelected ? WokeyDesign.blue.opacity(0.35) : WokeyDesign.hairline, lineWidth: 1)
+            }
         }
         .buttonStyle(.plain)
     }
@@ -327,12 +382,12 @@ struct KakaoTalkImportView: View {
 
             if messages.isEmpty {
                 Text("아직 읽은 메시지가 없습니다.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("\(messages.count)개의 메시지를 읽었습니다. 아래에는 최근 30개만 표시합니다.")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(WokeyDesign.muted)
 
                     ForEach(messages.prefix(30)) { message in
                         messageCard(message)
@@ -340,6 +395,8 @@ struct KakaoTalkImportView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .wokeyPanel()
     }
 
     private func messageCard(_ message: KakaoTalkMessageItem) -> some View {
@@ -360,18 +417,18 @@ struct KakaoTalkImportView: View {
                 if let sentAt = message.sentAt {
                     Text(sentAt)
                         .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(WokeyDesign.muted)
                 }
             }
 
             Text(message.text)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(WokeyDesign.muted)
                 .textSelection(.enabled)
         }
-        .padding(8)
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .padding(10)
+        .background(WokeyDesign.quietFill)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private var candidateSection: some View {
@@ -386,13 +443,15 @@ struct KakaoTalkImportView: View {
 
             if kakaoCandidates.isEmpty {
                 Text("아직 카카오톡에서 추출된 후보가 없습니다.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
             } else {
                 ForEach(kakaoCandidates) { candidate in
                     candidateCard(candidate)
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .wokeyPanel()
     }
 
     private func candidateCard(_ candidate: TaskCandidate) -> some View {
@@ -407,7 +466,7 @@ struct KakaoTalkImportView: View {
                     .font(.caption2)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .background(.quaternary)
+                    .background(WokeyDesign.statusFill)
                     .clipShape(Capsule())
             }
 
@@ -415,7 +474,7 @@ struct KakaoTalkImportView: View {
                !detail.isEmpty {
                 Text(detail)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
                     .textSelection(.enabled)
             }
 
@@ -423,7 +482,7 @@ struct KakaoTalkImportView: View {
                !dueText.isEmpty {
                 Text("추정 시간/마감: \(dueText)")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
             }
 
             HStack {
@@ -445,9 +504,13 @@ struct KakaoTalkImportView: View {
             }
             .font(.caption)
         }
-        .padding()
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding(16)
+        .background(WokeyDesign.quietFill)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(WokeyDesign.hairline, lineWidth: 1)
+        }
     }
 
     private var currentLLMConfig: LLMConfig? {
@@ -470,12 +533,14 @@ struct KakaoTalkImportView: View {
         if let settings = currentKakaoSettings {
             settings.isEnabled = true
             settings.hasAcceptedPrivacyNotice = true
+            settings.llmProcessingMode = KakaoTalkLLMProcessingMode.allowExternalAPI.rawValue
             settings.updatedAt = Date()
         } else {
             modelContext.insert(
                 KakaoTalkSettings(
                     isEnabled: true,
-                    hasAcceptedPrivacyNotice: true
+                    hasAcceptedPrivacyNotice: true,
+                    llmProcessingMode: KakaoTalkLLMProcessingMode.allowExternalAPI.rawValue
                 )
             )
         }
@@ -571,14 +636,6 @@ struct KakaoTalkImportView: View {
             return
         }
 
-        if let settings = currentKakaoSettings,
-           settings.llmProcessingMode == KakaoTalkLLMProcessingMode.localOnly.rawValue {
-            if config.isClaudeConfigured || !isLocalEndpoint(config.endpoint) {
-                errorMessage = "카카오톡 설정이 '로컬 Ollama만 사용'입니다. Claude 또는 외부 endpoint를 쓰려면 카카오톡 설정에서 외부 API 허용을 선택하세요."
-                return
-            }
-        }
-
         isExtracting = true
         errorMessage = nil
 
@@ -628,7 +685,7 @@ struct KakaoTalkImportView: View {
 
                     modelContext.insert(candidate)
                 }
-
+                try? modelContext.save()
                 statusMessage = "\(extracted.count)개의 할 일 후보를 추출했습니다."
                 showToast("\(extracted.count)개의 후보를 추출했습니다.")
             }
@@ -750,6 +807,7 @@ struct KakaoTalkImportView: View {
             dueAt: candidate.suggestedDueAt,
             relatedKeywords: candidate.title
         )
+        task.scheduleType = ScheduleType.task.rawValue
 
         modelContext.insert(task)
         candidate.isImported = true
@@ -780,6 +838,7 @@ struct KakaoTalkImportView: View {
             confidence: candidate.confidence
         )
         modelContext.insert(notification)
+        try? modelContext.save()
         showToast("Task로 추가했습니다: \(task.title)")
     }
     
@@ -828,24 +887,11 @@ struct KakaoTalkImportView: View {
             .filter { !$0.isEmpty }
     }
 
-    private func isLocalEndpoint(_ endpoint: String) -> Bool {
-        endpoint.contains("127.0.0.1") ||
-        endpoint.contains("localhost")
-    }
-
     private func scopeDisplayName(_ rawValue: String) -> String {
         KakaoTalkAnalysisScope(rawValue: rawValue)?.displayName ?? rawValue
     }
 
-    private func intervalDisplayName(_ rawValue: String) -> String {
-        KakaoTalkAnalysisInterval(rawValue: rawValue)?.displayName ?? rawValue
-    }
-
     private func storageDisplayName(_ rawValue: String) -> String {
         KakaoTalkStorageMode(rawValue: rawValue)?.displayName ?? rawValue
-    }
-
-    private func llmModeDisplayName(_ rawValue: String) -> String {
-        KakaoTalkLLMProcessingMode(rawValue: rawValue)?.displayName ?? rawValue
     }
 }

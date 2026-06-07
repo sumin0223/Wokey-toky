@@ -32,12 +32,11 @@ struct TextImportView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                headerSection
+            VStack(alignment: .leading, spacing: WokeyDesign.sectionSpacing) {
                 inputSection
                 candidateSection
             }
-            .padding()
+            .padding(WokeyDesign.pagePadding)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .overlay(alignment: .top) {
@@ -45,8 +44,24 @@ struct TextImportView: View {
                 InAppToastView(message: toastMessage)
             }
         }
-        .sheet(item: $editingCandidate) { candidate in
-            candidateEditSheet(candidate)
+        .overlay {
+            if let candidate = editingCandidate {
+                ZStack {
+                    Button {
+                        editingCandidate = nil
+                    } label: {
+                        Rectangle()
+                            .fill(Color.black.opacity(0.18))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    candidateEditSheet(candidate)
+                        .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                }
+                .zIndex(20)
+            }
         }
         .confirmationDialog(
             "이 후보를 삭제할까요?",
@@ -56,6 +71,7 @@ struct TextImportView: View {
             Button("후보 삭제", role: .destructive) {
                 if let candidate = candidatePendingDelete {
                     modelContext.delete(candidate)
+                    try? modelContext.save()
                     showToast("후보를 삭제했습니다.")
                 }
                 candidatePendingDelete = nil
@@ -69,23 +85,13 @@ struct TextImportView: View {
         }
     }
 
-    private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Text Import")
-                .font(.largeTitle)
-                .bold()
-
-            Text("메모나 대화 내용을 붙여넣으면 Wokey-Toky가 할 일 후보를 추출합니다.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-        }
-    }
 
     private var inputSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("원본 텍스트")
                 .font(.title2)
                 .bold()
+                .foregroundStyle(WokeyDesign.ink)
 
             TextField("출처 제목", text: $sourceTitle)
                 .textFieldStyle(.roundedBorder)
@@ -93,7 +99,7 @@ struct TextImportView: View {
             TextEditor(text: $sourceText)
                 .frame(minHeight: 180)
                 .padding(8)
-                .background(.quaternary)
+                .background(WokeyDesign.quietFill)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
 
             HStack {
@@ -119,16 +125,18 @@ struct TextImportView: View {
             if let errorMessage {
                 Text(errorMessage)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(WokeyDesign.active)
             }
 
-            Text("Apple Notes와 KakaoTalk 연동 전 단계입니다. 먼저 텍스트 붙여넣기 기반으로 Task 추출 흐름을 안정화합니다.")
+            Text("붙여넣은 텍스트는 후보 추출을 실행할 때만 Claude API로 전송됩니다.")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(WokeyDesign.muted)
         }
-        .padding()
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .wokeyPanel()
+    }
+
+    private var textCandidates: [TaskCandidate] {
+        candidates.filter { $0.sourceType == "pasteText" }
     }
 
     private var candidateSection: some View {
@@ -136,16 +144,19 @@ struct TextImportView: View {
             Text("추출된 할 일 후보")
                 .font(.title2)
                 .bold()
+                .foregroundStyle(WokeyDesign.ink)
 
-            if candidates.isEmpty {
+            if textCandidates.isEmpty {
                 Text("아직 추출된 후보가 없습니다.")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
             } else {
-                ForEach(candidates) { candidate in
+                ForEach(textCandidates) { candidate in
                     candidateCard(candidate)
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .wokeyPanel()
     }
 
     private func candidateCard(_ candidate: TaskCandidate) -> some View {
@@ -153,6 +164,7 @@ struct TextImportView: View {
             HStack {
                 Text(candidate.title)
                     .font(.headline)
+                    .foregroundStyle(WokeyDesign.ink)
 
                 Spacer()
 
@@ -160,7 +172,7 @@ struct TextImportView: View {
                     .font(.caption2)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
-                    .background(.quaternary)
+                    .background(WokeyDesign.statusFill)
                     .clipShape(Capsule())
             }
 
@@ -168,7 +180,7 @@ struct TextImportView: View {
                !detail.isEmpty {
                 Text(detail)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
                     .textSelection(.enabled)
             }
 
@@ -176,16 +188,12 @@ struct TextImportView: View {
                !dueText.isEmpty {
                 Text("추정 시간/마감: \(dueText)")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
             }
-
-            Text("출처: \(candidate.sourceType)")
-                .font(.caption)
-                .foregroundStyle(.secondary)
 
             Text(candidate.sourceText)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(WokeyDesign.muted)
                 .lineLimit(3)
                 .textSelection(.enabled)
 
@@ -208,9 +216,13 @@ struct TextImportView: View {
             }
             .font(.caption)
         }
-        .padding()
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding(16)
+        .background(WokeyDesign.quietFill)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(WokeyDesign.hairline, lineWidth: 1)
+        }
     }
 
     private var currentLLMConfig: LLMConfig? {
@@ -260,6 +272,7 @@ struct TextImportView: View {
                     modelContext.insert(candidate)
                 }
 
+                try? modelContext.save()
                 sourceText = ""
                 showToast("\(extracted.count)개의 후보를 추출했습니다.")
             }
@@ -293,6 +306,7 @@ struct TextImportView: View {
             dueAt: candidate.suggestedDueAt,
             relatedKeywords: candidate.title
         )
+        task.scheduleType = ScheduleType.task.rawValue
 
         modelContext.insert(task)
         candidate.isImported = true
@@ -323,6 +337,7 @@ struct TextImportView: View {
             confidence: candidate.confidence
         )
         modelContext.insert(notification)
+        try? modelContext.save()
         showToast("Task로 추가했습니다: \(task.title)")
     }
 
@@ -335,9 +350,28 @@ struct TextImportView: View {
 
     private func candidateEditSheet(_ candidate: TaskCandidate) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("할 일 후보 수정")
-                .font(.title2)
-                .bold()
+            HStack {
+                Text("할 일 후보 수정")
+                    .font(.title2)
+                    .bold()
+                    .foregroundStyle(WokeyDesign.ink)
+
+                Spacer()
+
+                Button {
+                    editingCandidate = nil
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(WokeyDesign.ink)
+                        .frame(width: 28, height: 28)
+                        .background(WokeyDesign.quietFill)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.cancelAction)
+                .help("닫기")
+            }
 
             TextField("제목", text: $editingCandidateTitle)
                 .textFieldStyle(.roundedBorder)
@@ -345,12 +379,12 @@ struct TextImportView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("상세 설명")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(WokeyDesign.muted)
 
                 TextEditor(text: $editingCandidateDetail)
                     .frame(minHeight: 120)
                     .padding(8)
-                    .background(.quaternary)
+                    .background(WokeyDesign.quietFill)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
             }
 
@@ -362,6 +396,7 @@ struct TextImportView: View {
                     candidate.title = editingCandidateTitle.trimmingCharacters(in: .whitespacesAndNewlines)
                     candidate.detail = editingCandidateDetail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editingCandidateDetail
                     candidate.dueText = editingCandidateDueText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editingCandidateDueText
+                    try? modelContext.save()
                     editingCandidate = nil
                     showToast("후보를 수정했습니다.")
                 }
@@ -374,8 +409,15 @@ struct TextImportView: View {
                 Spacer()
             }
         }
-        .padding()
-        .frame(width: 540, height: 380)
+        .padding(24)
+        .frame(width: 520, height: 360)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(WokeyDesign.hairline, lineWidth: 1)
+        }
+        .shadow(color: Color.black.opacity(0.18), radius: 24, x: 0, y: 12)
     }
 
     private func showToast(_ message: String) {
