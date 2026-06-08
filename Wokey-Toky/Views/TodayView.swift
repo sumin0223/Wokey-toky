@@ -27,6 +27,7 @@ struct TodayView: View {
     @State private var selectedProgress: TodayProgressKind?
     @State private var isActionPillExpanded = false
     @State private var toastMessage: String?
+    @State private var showCollectionPrompt = true
 
     private let briefingService = BriefingService()
     private let evaluationService = TaskEvaluationService()
@@ -82,22 +83,54 @@ struct TodayView: View {
 
             Spacer()
 
-            VStack(alignment: .trailing, spacing: 10) {
-                HStack(spacing: 8) {
-                    Circle()
-                        .frame(width: 9, height: 9)
-                        .foregroundStyle(captureManager.isCapturing ? WokeyDesign.active : WokeyDesign.muted)
+            VStack(alignment: .trailing, spacing: 8) {
+                Toggle(
+                    "",
+                    isOn: Binding(
+                        get: { captureManager.isCapturing },
+                        set: { isEnabled in
+                            setCaptureEnabled(isEnabled)
+                        }
+                    )
+                )
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .frame(width: 52, alignment: .trailing)
 
-                    Text(captureManager.isCapturing ? "자동 수집 중" : "자동 수집 꺼짐")
-                        .font(.caption)
-                        .foregroundStyle(WokeyDesign.muted)
-                }
+                ZStack(alignment: .topTrailing) {
+                    if showCollectionPrompt && !captureManager.isCapturing {
+                        VStack(spacing: -1) {
+                            Triangle()
+                                .fill(Color.white.opacity(0.94))
+                                .frame(width: 22, height: 11)
+                                .padding(.trailing, 18)
 
-                Button("상태 새로고침") {
-                    refreshTaskEvaluation()
+                            Text("수집을 시작할까요?")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundStyle(WokeyDesign.ink)
+                                .padding(.horizontal, 22)
+                                .padding(.vertical, 14)
+                                .background(Color.white.opacity(0.94))
+                                .clipShape(Capsule())
+                                .overlay {
+                                    Capsule()
+                                        .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                                }
+                                .shadow(
+                                    color: Color.black.opacity(0.06),
+                                    radius: 16,
+                                    x: 0,
+                                    y: 8
+                                )
+                        }
+                        .onTapGesture {
+                            setCaptureEnabled(true)
+                        }
+                    }
                 }
-                .buttonStyle(.bordered)
+                .frame(width: 188, height: 58, alignment: .topTrailing)
             }
+            .frame(width: 188, height: 92, alignment: .topTrailing)
         }
     }
 
@@ -706,16 +739,20 @@ struct TodayView: View {
         showToast("\(type.displayName)를 생성했습니다.")
     }
 
-    private func refreshTaskEvaluation() {
-        let results = evaluationService.evaluateTasks(
-            tasks: tasks,
-            activities: activities
-        )
+    private func setCaptureEnabled(_ isEnabled: Bool) {
+        if isEnabled {
+            showCollectionPrompt = false
+            captureManager.start(modelContext: modelContext)
+            showToast("자동 수집을 시작했습니다.")
+        } else {
+            captureManager.stop(modelContext: modelContext)
+            showCollectionPrompt = true
+            showToast("자동 수집을 중지했습니다.")
+        }
 
-        evaluationService.applyEvaluationResults(results)
         saveContext()
-        showToast("오늘 활동을 기준으로 상태를 새로고침했습니다.")
     }
+
 
     private func markCompleted(_ task: TaskItem) {
         responseService.markCompleted(task: task, modelContext: modelContext)
@@ -819,5 +856,16 @@ private struct TodayBriefingSlot: Identifiable {
         formatter.locale = Locale(identifier: "ko_KR")
         formatter.dateFormat = "H시"
         return formatter.string(from: scheduledDate)
+    }
+}
+
+private struct Triangle: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.closeSubpath()
+        return path
     }
 }

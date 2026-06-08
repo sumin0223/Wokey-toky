@@ -64,11 +64,6 @@ struct ActivityTimelineView: View {
                 }
                 .buttonStyle(.bordered)
 
-                Button("현재 앱 기록") {
-                    captureCurrentApp()
-                }
-                .buttonStyle(.bordered)
-
                 Button("새로고침") {
                     captureManager.refreshOnly()
                 }
@@ -192,7 +187,7 @@ struct ActivityTimelineView: View {
                 ContentUnavailableView(
                     "아직 기록이 없습니다",
                     systemImage: "clock",
-                    description: Text("Today에서 수집을 켜거나 현재 앱 기록 버튼을 눌러보세요.")
+                    description: Text("Today에서 수집을 켜면 선택한 앱만 기록됩니다.")
                 )
             } else {
                 LazyVStack(alignment: .leading, spacing: 16) {
@@ -544,4 +539,3 @@ private struct ActivityFilterSettingsView: View {
         ActivityFilterSettings.saveSelectedSiteHosts(selectedSiteHosts)
     }
 }
-
