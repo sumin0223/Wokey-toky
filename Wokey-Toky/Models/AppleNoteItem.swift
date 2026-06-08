@@ -12,6 +12,8 @@ struct AppleNoteItem: Identifiable, Hashable {
     let title: String
     let body: String
     let modifiedAtText: String?
+    let accountName: String?
+    let folderName: String?
 
     var previewText: String {
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -19,5 +21,18 @@ struct AppleNoteItem: Identifiable, Hashable {
             return "내용 미리보기 없음"
         }
         return String(trimmed.prefix(240))
+    }
+
+    var folderDisplayText: String {
+        switch (accountName, folderName) {
+        case let (account?, folder?) where !account.isEmpty && !folder.isEmpty:
+            return "\(account) / \(folder)"
+        case let (_, folder?) where !folder.isEmpty:
+            return folder
+        case let (account?, _) where !account.isEmpty:
+            return account
+        default:
+            return "폴더 정보 없음"
+        }
     }
 }

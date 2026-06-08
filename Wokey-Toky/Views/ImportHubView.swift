@@ -15,12 +15,25 @@ struct ImportHubView: View {
     @Query(sort: \TaskItem.createdAt, order: .reverse)
     private var tasks: [TaskItem]
 
+    @Query(sort: \TaskCandidate.createdAt, order: .reverse)
+    private var candidates: [TaskCandidate]
+
     @StateObject private var calendarService = CalendarService()
 
     @State private var showCalendarImport = false
     @State private var showTextImport = false
     @State private var showAppleNotesImport = false
     @State private var showKakaoTalkImport = false
+
+    @State private var candidatePendingDelete: TaskCandidate?
+    @State private var showCandidateDeleteConfirmation = false
+    @State private var toastMessage: String?
+    @State private var editingCandidate: TaskCandidate?
+    @State private var editingCandidateTitle = ""
+    @State private var editingCandidateDetail = ""
+    @State private var editingCandidateDueText = ""
+    @State private var recentlyImportedTask: TaskItem?
+    @State private var recentlyImportedCandidate: TaskCandidate?
 
     var body: some View {
         ZStack {
@@ -36,6 +49,40 @@ struct ImportHubView: View {
             .navigationTitle("Import")
             .onAppear {
                 calendarService.refreshAuthorizationStatus()
+            }
+            .overlay(alignment: .top) {
+                if let toastMessage {
+                    InAppToastView(message: toastMessage)
+                }
+            }
+            .confirmationDialog(
+                "이 후보를 삭제할까요?",
+                isPresented: $showCandidateDeleteConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("후보 삭제", role: .destructive) {
+                    if let candidate = candidatePendingDelete {
+                        modelContext.delete(candidate)
+                        saveContext()
+                        showToast("후보를 삭제했습니다.")
+                    }
+                    candidatePendingDelete = nil
+                }
+
+                Button("취소", role: .cancel) {
+                    candidatePendingDelete = nil
+                }
+            } message: {
+                Text("삭제한 후보는 Task로 가져올 수 없습니다. 같은 원본을 다시 분석하면 다시 생성될 수 있습니다.")
+            }
+
+            if let candidate = editingCandidate {
+                modalBackdrop {
+                    editingCandidate = nil
+                } content: {
+                    candidateEditPanel(candidate)
+                        .frame(width: 540, height: 380)
+                }
             }
 
             if showCalendarImport {
@@ -195,7 +242,38 @@ struct ImportHubView: View {
                 Spacer()
             }
 
-            if importRows.isEmpty {
+            if let recentlyImportedTask {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("방금 Task로 가져왔습니다")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(WokeyDesign.muted)
+
+                        Text(recentlyImportedTask.title)
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(WokeyDesign.ink)
+                            .lineLimit(1)
+                    }
+
+                    Spacer()
+
+                    Button("되돌리기") {
+                        undoRecentImport()
+                    }
+                    .font(.caption)
+                }
+                .padding(14)
+                .background(WokeyDesign.selection)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(WokeyDesign.hairline, lineWidth: 1)
+                }
+            }
+
+            if importRows.isEmpty && pendingCandidates.isEmpty {
                 ContentUnavailableView(
                     "아직 추출한 후보가 없습니다",
                     systemImage: "tray",
@@ -204,6 +282,10 @@ struct ImportHubView: View {
                 .frame(maxWidth: .infinity, minHeight: 220)
             } else {
                 LazyVStack(alignment: .leading, spacing: 14) {
+                    ForEach(pendingCandidates) { candidate in
+                        candidateRowView(candidate)
+                    }
+
                     ForEach(importRows) { row in
                         importRowView(row)
                     }
@@ -279,6 +361,81 @@ struct ImportHubView: View {
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
+    private func candidateRowView(_ candidate: TaskCandidate) -> some View {
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text(sourceLabel(for: candidate.sourceType))
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(WokeyDesign.muted)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(WokeyDesign.statusFill)
+                        .clipShape(Capsule())
+
+                    Text("후보")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(WokeyDesign.blue)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(WokeyDesign.selection)
+                        .clipShape(Capsule())
+
+                    Text("신뢰도 \(candidate.confidence, specifier: "%.2f")")
+                        .font(.caption)
+                        .foregroundStyle(WokeyDesign.muted)
+                }
+
+                Text(candidate.title)
+                    .font(.headline)
+                    .foregroundStyle(WokeyDesign.ink)
+
+                if let detail = candidate.detail,
+                   !detail.isEmpty {
+                    Text(detail)
+                        .font(.caption)
+                        .foregroundStyle(WokeyDesign.muted)
+                        .lineLimit(2)
+                }
+
+                if let dueText = candidate.dueText,
+                   !dueText.isEmpty {
+                    Text("추정 시간/마감: \(dueText)")
+                        .font(.caption)
+                        .foregroundStyle(WokeyDesign.muted)
+                }
+            }
+
+            Spacer()
+
+            HStack(spacing: 8) {
+                Button("수정") {
+                    startEditingCandidate(candidate)
+                }
+
+                Button("가져오기") {
+                    importCandidateAsTask(candidate)
+                }
+                .disabled(candidate.isImported)
+
+                Button("삭제") {
+                    candidatePendingDelete = candidate
+                    showCandidateDeleteConfirmation = true
+                }
+            }
+            .font(.caption)
+        }
+        .padding(16)
+        .background(WokeyDesign.quietFill)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(WokeyDesign.hairline, lineWidth: 1)
+        }
+    }
+
     private func importRowView(_ row: ImportScheduleRow) -> some View {
         HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 6) {
@@ -325,6 +482,153 @@ struct ImportHubView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
+    private func startEditingCandidate(_ candidate: TaskCandidate) {
+        editingCandidate = candidate
+        editingCandidateTitle = candidate.title
+        editingCandidateDetail = candidate.detail ?? ""
+        editingCandidateDueText = candidate.dueText ?? ""
+    }
+
+    private func candidateEditPanel(_ candidate: TaskCandidate) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("할 일 후보 수정")
+                    .font(.title2)
+                    .bold()
+                    .foregroundStyle(WokeyDesign.ink)
+
+                Spacer()
+
+                Button {
+                    editingCandidate = nil
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(WokeyDesign.ink)
+                        .frame(width: 28, height: 28)
+                        .background(WokeyDesign.quietFill)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut(.cancelAction)
+                .help("닫기")
+            }
+
+            TextField("제목", text: $editingCandidateTitle)
+                .textFieldStyle(.roundedBorder)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("상세 설명")
+                    .font(.caption)
+                    .foregroundStyle(WokeyDesign.muted)
+
+                TextEditor(text: $editingCandidateDetail)
+                    .frame(minHeight: 120)
+                    .padding(8)
+                    .background(WokeyDesign.quietFill)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+
+            TextField("추정 시간/마감", text: $editingCandidateDueText)
+                .textFieldStyle(.roundedBorder)
+
+            HStack {
+                Button("저장") {
+                    candidate.title = editingCandidateTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+                    candidate.detail = editingCandidateDetail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editingCandidateDetail
+                    candidate.dueText = editingCandidateDueText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : editingCandidateDueText
+                    saveContext()
+                    editingCandidate = nil
+                    showToast("후보를 수정했습니다.")
+                }
+                .disabled(editingCandidateTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+                Button("취소") {
+                    editingCandidate = nil
+                }
+
+                Spacer()
+            }
+        }
+        .padding(24)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private func importCandidateAsTask(_ candidate: TaskCandidate) {
+        var detailParts: [String] = []
+
+        if let detail = candidate.detail,
+           !detail.isEmpty {
+            detailParts.append(detail)
+        }
+
+        if let dueText = candidate.dueText,
+           !dueText.isEmpty {
+            detailParts.append("추정 시간/마감: \(dueText)")
+        }
+
+        detailParts.append("원본 출처: \(sourceLabel(for: candidate.sourceType))")
+
+        let task = TaskItem(
+            title: candidate.title,
+            detail: detailParts.joined(separator: "\n"),
+            source: candidate.sourceType,
+            status: TaskStatus.pending.rawValue,
+            dueAt: candidate.suggestedDueAt,
+            relatedKeywords: candidate.title
+        )
+        task.scheduleType = ScheduleType.task.rawValue
+
+        modelContext.insert(task)
+        candidate.isImported = true
+
+        let log = TaskChangeLog(
+            taskTitle: task.title,
+            changeType: "taskCreated",
+            previousStatus: nil,
+            newStatus: task.status,
+            previousIsCompleted: false,
+            newIsCompleted: task.isCompleted,
+            previousDueAt: nil,
+            newDueAt: task.dueAt,
+            previousTitle: nil,
+            newTitle: task.title,
+            reason: "Import 후보를 Task로 가져왔습니다.",
+            source: candidate.sourceType,
+            confidence: candidate.confidence
+        )
+        modelContext.insert(log)
+
+        let notification = AppNotification(
+            title: "새 Task가 추가되었습니다",
+            message: "\(task.title) · 출처: \(sourceLabel(for: candidate.sourceType))",
+            kind: "taskCandidate",
+            source: candidate.sourceType,
+            relatedTaskTitle: task.title,
+            confidence: candidate.confidence
+        )
+        modelContext.insert(notification)
+
+        recentlyImportedTask = task
+        recentlyImportedCandidate = candidate
+
+        saveContext()
+        showToast("Task로 추가했습니다: \(task.title)")
+    }
+
+    private func undoRecentImport() {
+        guard let task = recentlyImportedTask else {
+            return
+        }
+
+        modelContext.delete(task)
+        recentlyImportedCandidate?.isImported = false
+        recentlyImportedTask = nil
+        recentlyImportedCandidate = nil
+        saveContext()
+        showToast("가져오기를 되돌렸습니다.")
+    }
+
     private func importEventAsTask(_ event: CalendarEventItem) {
         let detailParts = [
             event.notes,
@@ -350,6 +654,13 @@ struct ImportHubView: View {
 
         modelContext.insert(task)
         saveContext()
+    }
+
+    private var pendingCandidates: [TaskCandidate] {
+        candidates.filter { candidate in
+            !candidate.isImported &&
+            ["appleNotes", "kakaoTalk", "text"].contains(candidate.sourceType)
+        }
     }
 
     private var importRows: [ImportScheduleRow] {
@@ -469,6 +780,15 @@ struct ImportHubView: View {
 
     private func saveContext() {
         try? modelContext.save()
+    }
+
+    private func showToast(_ message: String) {
+        toastMessage = message
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) {
+            if toastMessage == message {
+                toastMessage = nil
+            }
+        }
     }
 
     private func modalBackdrop<Content: View>(
