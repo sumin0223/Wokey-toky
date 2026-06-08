@@ -605,7 +605,7 @@ struct ContentView: View {
             TodayView()
 
         case .activity:
-            ActivityHubView()
+            ActivityTimelineView()
 
         case .schedule:
             TasksView()

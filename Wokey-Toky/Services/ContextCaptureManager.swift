@@ -218,6 +218,16 @@ final class ContextCaptureManager: ObservableObject {
             return
         }
 
+        guard ActivityFilterSettings.allows(
+            appName: captured.appName,
+            bundleIdentifier: captured.bundleIdentifier,
+            url: captured.url
+        ) else {
+            closeLatestActivity(modelContext: modelContext, endedAt: Date())
+            lastActivitySignature = ""
+            return
+        }
+
         let now = Date()
 
         closeLatestActivity(modelContext: modelContext, endedAt: now)
@@ -247,6 +257,16 @@ final class ContextCaptureManager: ObservableObject {
         }
 
         let now = Date()
+
+        guard ActivityFilterSettings.allows(
+            appName: captured.appName,
+            bundleIdentifier: captured.bundleIdentifier,
+            url: captured.url
+        ) else {
+            closeLatestActivity(modelContext: modelContext, endedAt: now)
+            lastActivitySignature = ""
+            return
+        }
         let currentSignature = "\(captured.appName)|\(captured.bundleIdentifier ?? "")|\(captured.windowTitle ?? "")|\(captured.url ?? "")"
 
         if currentSignature == lastActivitySignature {
