@@ -11,10 +11,10 @@ enum WokeyDesign {
     static let mint = Color(red: 0.36, green: 0.38, blue: 0.42)
     static let softBlue = Color(red: 0.95, green: 0.95, blue: 0.96)
     static let page = Color(red: 0.94, green: 0.94, blue: 0.95)
-    static let panel = Color.white.opacity(0.72)
+    static let panel = Color.white.opacity(0.78)
     static let ink = Color(red: 0.13, green: 0.15, blue: 0.20)
     static let muted = Color(red: 0.48, green: 0.52, blue: 0.61)
-    static let hairline = Color.black.opacity(0.06)
+    static let hairline = Color.black.opacity(0.07)
     static let selection = Color.black.opacity(0.06)
     static let active = Color(red: 0.22, green: 0.24, blue: 0.28)
     static let quietFill = Color.black.opacity(0.035)
@@ -37,7 +37,8 @@ struct WokeyPanel: ViewModifier {
                 RoundedRectangle(cornerRadius: WokeyDesign.panelRadius, style: .continuous)
                     .stroke(WokeyDesign.hairline, lineWidth: 1)
             }
-            .shadow(color: Color.black.opacity(0.05), radius: 18, x: 0, y: 10)
+            .shadow(color: Color.black.opacity(0.045), radius: 10, x: 0, y: 3)
+            .shadow(color: Color.black.opacity(0.075), radius: 28, x: 0, y: 16)
     }
 }
 
@@ -71,19 +72,26 @@ extension View {
 struct WokeyMonthCalendar: View {
     @Binding var selectedDate: Date
     let markedDays: Set<String>
+    var cellSize: CGFloat = 34
+    var cellSpacing: CGFloat = 8
+    var showsMonthTitle = true
 
     @State private var visibleMonth: Date = Date()
 
     private let calendar = Calendar.current
     private let weekdaySymbols = ["S", "M", "T", "W", "T", "F", "S"]
-    private let columns = Array(repeating: GridItem(.fixed(34), spacing: 8), count: 7)
+    private var columns: [GridItem] {
+        Array(repeating: GridItem(.fixed(cellSize), spacing: cellSpacing), count: 7)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Text(monthTitle)
-                    .font(.headline)
-                    .foregroundStyle(WokeyDesign.ink)
+                if showsMonthTitle {
+                    Text(monthTitle)
+                        .font(.headline)
+                        .foregroundStyle(WokeyDesign.ink)
+                }
 
                 Spacer()
 
@@ -110,7 +118,7 @@ struct WokeyMonthCalendar: View {
                         .font(.caption2)
                         .fontWeight(.semibold)
                         .foregroundStyle(WokeyDesign.muted)
-                        .frame(width: 34, height: 18)
+                        .frame(width: cellSize, height: 18)
                 }
 
                 ForEach(calendarDays) { day in
@@ -127,7 +135,7 @@ struct WokeyMonthCalendar: View {
                                 .frame(width: 4, height: 4)
                         }
                         .foregroundStyle(dayTextColor(day))
-                        .frame(width: 34, height: 34)
+                        .frame(width: cellSize, height: cellSize)
                         .background(dayBackground(day))
                         .overlay {
                             if day.isToday && !day.isSelected {

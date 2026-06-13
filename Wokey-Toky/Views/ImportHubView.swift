@@ -21,9 +21,9 @@ struct ImportHubView: View {
     @StateObject private var calendarService = CalendarService()
 
     @State private var showCalendarImport = false
-    @State private var showTextImport = false
     @State private var showAppleNotesImport = false
     @State private var showKakaoTalkImport = false
+    @State private var showEmailImport = false
 
     @State private var candidatePendingDelete: TaskCandidate?
     @State private var showCandidateDeleteConfirmation = false
@@ -98,19 +98,6 @@ struct ImportHubView: View {
                 }
             }
 
-            if showTextImport {
-                modalBackdrop {
-                    showTextImport = false
-                } content: {
-                    ImportSheetContainer(title: "Text Import") {
-                        showTextImport = false
-                    } content: {
-                        TextImportView()
-                    }
-                    .frame(width: 760, height: 680)
-                }
-            }
-
             if showAppleNotesImport {
                 modalBackdrop {
                     showAppleNotesImport = false
@@ -136,6 +123,19 @@ struct ImportHubView: View {
                     .frame(width: 820, height: 720)
                 }
             }
+
+            if showEmailImport {
+                modalBackdrop {
+                    showEmailImport = false
+                } content: {
+                    ImportSheetContainer(title: "Email Import") {
+                        showEmailImport = false
+                    } content: {
+                        EmailImportView()
+                    }
+                    .frame(width: 880, height: 740)
+                }
+            }
         }
     }
 
@@ -146,7 +146,7 @@ struct ImportHubView: View {
                 .bold()
                 .foregroundStyle(WokeyDesign.ink)
 
-            Text("Calendar, Text, Apple Notes, KakaoTalk에서 일정과 Task 후보를 가져옵니다.")
+            Text("Calendar, Apple Notes, KakaoTalk, Email에서 일정과 Task 후보를 가져옵니다.")
                 .font(.subheadline)
                 .foregroundStyle(WokeyDesign.muted)
         }
@@ -159,7 +159,11 @@ struct ImportHubView: View {
                 .bold()
                 .foregroundStyle(WokeyDesign.ink)
 
-            HStack(alignment: .top, spacing: 18) {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 230), spacing: 18)],
+                alignment: .leading,
+                spacing: 18
+            ) {
                 importSourceCard(
                     title: "Calendar",
                     status: calendarAuthorizationText,
@@ -181,17 +185,6 @@ struct ImportHubView: View {
                     },
                     detailActionTitle: "상세 가져오기",
                     detailAction: { showCalendarImport = true }
-                )
-
-                importSourceCard(
-                    title: "Text",
-                    status: "직접 입력",
-                    message: "복사한 텍스트나 메모 내용을 붙여넣어 Task 후보를 추출합니다.",
-                    systemImage: "doc.text",
-                    primaryActionTitle: "텍스트 가져오기",
-                    secondaryActionTitle: nil,
-                    primaryAction: { showTextImport = true },
-                    secondaryAction: nil
                 )
 
                 importSourceCard(
@@ -219,6 +212,17 @@ struct ImportHubView: View {
                         openPrivacySettings("Privacy_AllFiles")
                     }
                 )
+
+                importSourceCard(
+                    title: "Email",
+                    status: "Naver Mail · Gmail",
+                    message: "지정한 발신자 범위 안에서 받은 메일을 읽고 할 일 후보를 추출합니다.",
+                    systemImage: "envelope.badge",
+                    primaryActionTitle: "이메일 가져오기",
+                    secondaryActionTitle: nil,
+                    primaryAction: { showEmailImport = true },
+                    secondaryAction: nil
+                )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -234,7 +238,7 @@ struct ImportHubView: View {
                         .bold()
                         .foregroundStyle(WokeyDesign.ink)
 
-                    Text("Calendar 후보와 이미 가져온 Text, Apple Notes, KakaoTalk Task를 출처와 함께 확인합니다.")
+                    Text("Calendar 후보와 이미 가져온 Apple Notes, KakaoTalk, Email Task를 출처와 함께 확인합니다.")
                         .font(.caption)
                         .foregroundStyle(WokeyDesign.muted)
                 }
@@ -659,7 +663,7 @@ struct ImportHubView: View {
     private var pendingCandidates: [TaskCandidate] {
         candidates.filter { candidate in
             !candidate.isImported &&
-            ["appleNotes", "kakaoTalk", "text"].contains(candidate.sourceType)
+            ["appleNotes", "kakaoTalk", "naverMail", "gmail"].contains(candidate.sourceType)
         }
     }
 
@@ -699,7 +703,7 @@ struct ImportHubView: View {
 
     private var importedTasks: [TaskItem] {
         tasks.filter {
-            ["appleCalendar", "appleNotes", "kakaoTalk", "text"].contains($0.source)
+            ["appleCalendar", "appleNotes", "kakaoTalk", "naverMail", "gmail"].contains($0.source)
         }
     }
 
@@ -725,8 +729,10 @@ struct ImportHubView: View {
             return "Apple Notes"
         case "kakaoTalk":
             return "KakaoTalk"
-        case "text":
-            return "Text"
+        case "naverMail":
+            return "Naver Mail"
+        case "gmail":
+            return "Gmail"
         default:
             return source
         }

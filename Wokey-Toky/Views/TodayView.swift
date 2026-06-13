@@ -28,10 +28,13 @@ struct TodayView: View {
     @State private var isActionPillExpanded = false
     @State private var toastMessage: String?
     @State private var showCollectionPrompt = true
+    @State private var selectedDate = Date()
+    @State private var showDatePicker = false
 
     private let briefingService = BriefingService()
     private let evaluationService = TaskEvaluationService()
     private let responseService = TaskResponseService()
+    private let floatingWidgetHeight: CGFloat = 142
 
     private let briefingSlots: [TodayBriefingSlot] = [
         TodayBriefingSlot(type: .morning, title: "아침", hour: 8, minute: 0),
@@ -43,10 +46,13 @@ struct TodayView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 34) {
                 headerSection
-                progressSection
 
-                if let selectedProgress {
-                    progressDetailSection(selectedProgress)
+                if isSelectedDateToday {
+                    progressSection
+
+                    if let selectedProgress {
+                        progressDetailSection(selectedProgress)
+                    }
                 }
 
                 briefingSection
@@ -62,28 +68,80 @@ struct TodayView: View {
             }
         }
         .overlay(alignment: .bottom) {
-            floatingActionPill
-                .padding(.horizontal, 28)
-                .padding(.bottom, 22)
+            if isSelectedDateToday {
+                floatingActionPill
+                    .padding(.horizontal, 28)
+                    .padding(.bottom, 22)
+            }
         }
     }
 
     private var headerSection: some View {
         HStack(alignment: .top, spacing: 24) {
             VStack(alignment: .leading, spacing: 8) {
-                Text("Today")
-                    .font(.largeTitle)
-                    .bold()
-                    .foregroundStyle(WokeyDesign.ink)
+                HStack(spacing: 10) {
+                    Text("Today")
+                        .font(.largeTitle)
+                        .bold()
+                        .foregroundStyle(WokeyDesign.ink)
 
-                Text(Date().formatted(date: .complete, time: .omitted))
+                    Button {
+                        showDatePicker.toggle()
+                    } label: {
+                        Image(systemName: "calendar")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(WokeyDesign.ink)
+                            .frame(width: 32, height: 32)
+                            .background(WokeyDesign.quietFill)
+                            .clipShape(Circle())
+                            .overlay {
+                                Circle()
+                                    .stroke(WokeyDesign.hairline, lineWidth: 1)
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .help("날짜별 브리핑 보기")
+                    .popover(isPresented: $showDatePicker) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            DatePicker(
+                                "",
+                                selection: $selectedDate,
+                                displayedComponents: .date
+                            )
+                            .datePickerStyle(.graphical)
+                            .labelsHidden()
+
+                            HStack {
+                                Button("오늘") {
+                                    selectedDate = Date()
+                                    selectedProgress = nil
+                                    showDatePicker = false
+                                }
+
+                                Spacer()
+
+                                Button("닫기") {
+                                    showDatePicker = false
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        .padding(16)
+                        .frame(width: 280)
+                    }
+                    .onChange(of: selectedDate) { _, _ in
+                        selectedProgress = nil
+                    }
+                }
+
+                Text(selectedDate.formatted(date: .complete, time: .omitted))
                     .font(.subheadline)
                     .foregroundStyle(WokeyDesign.muted)
             }
 
             Spacer()
 
-            VStack(alignment: .trailing, spacing: 8) {
+            VStack(alignment: .center, spacing: 7) {
                 Toggle(
                     "",
                     isOn: Binding(
@@ -95,42 +153,39 @@ struct TodayView: View {
                 )
                 .labelsHidden()
                 .toggleStyle(.switch)
-                .frame(width: 52, alignment: .trailing)
+                .frame(width: 52, alignment: .center)
 
-                ZStack(alignment: .topTrailing) {
-                    if showCollectionPrompt && !captureManager.isCapturing {
-                        VStack(spacing: -1) {
-                            Triangle()
-                                .fill(Color.white.opacity(0.94))
-                                .frame(width: 22, height: 11)
-                                .padding(.trailing, 18)
+                if showCollectionPrompt && !captureManager.isCapturing {
+                    VStack(spacing: -1) {
+                        Triangle()
+                            .fill(Color.white.opacity(0.94))
+                            .frame(width: 16, height: 8)
 
-                            Text("수집을 시작할까요?")
-                                .font(.system(size: 15, weight: .medium))
-                                .foregroundStyle(WokeyDesign.ink)
-                                .padding(.horizontal, 22)
-                                .padding(.vertical, 14)
-                                .background(Color.white.opacity(0.94))
-                                .clipShape(Capsule())
-                                .overlay {
-                                    Capsule()
-                                        .stroke(Color.black.opacity(0.08), lineWidth: 1)
-                                }
-                                .shadow(
-                                    color: Color.black.opacity(0.06),
-                                    radius: 16,
-                                    x: 0,
-                                    y: 8
-                                )
-                        }
-                        .onTapGesture {
-                            setCaptureEnabled(true)
-                        }
+                        Text("수집을 시작할까요?")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(WokeyDesign.ink)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(Color.white.opacity(0.94))
+                            .clipShape(Capsule())
+                            .overlay {
+                                Capsule()
+                                    .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                            }
+                            .shadow(
+                                color: Color.black.opacity(0.05),
+                                radius: 10,
+                                x: 0,
+                                y: 5
+                            )
+                    }
+                    .onTapGesture {
+                        setCaptureEnabled(true)
                     }
                 }
-                .frame(width: 188, height: 58, alignment: .topTrailing)
             }
-            .frame(width: 188, height: 92, alignment: .topTrailing)
+            .frame(width: 142, alignment: .top)
+            .frame(minHeight: 70, alignment: .top)
         }
     }
 
@@ -333,10 +388,10 @@ struct TodayView: View {
     private var floatingActionExpandedContent: some View {
         HStack(alignment: .top, spacing: 18) {
             floatingTodayCheckWidget
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .frame(maxWidth: .infinity, minHeight: floatingWidgetHeight, maxHeight: floatingWidgetHeight, alignment: .topLeading)
 
             floatingConfirmationWidget
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .frame(maxWidth: .infinity, minHeight: floatingWidgetHeight, maxHeight: floatingWidgetHeight, alignment: .topLeading)
         }
         .padding(18)
         .frame(maxWidth: 760, alignment: .leading)
@@ -368,7 +423,7 @@ struct TodayView: View {
                 Text("점검할 할 일이 없습니다.")
                     .font(.caption)
                     .foregroundStyle(WokeyDesign.muted)
-                    .frame(maxWidth: .infinity, minHeight: 74, alignment: .topLeading)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(todayCheckTasks.prefix(3)) { task in
@@ -399,9 +454,11 @@ struct TodayView: View {
                             .foregroundStyle(WokeyDesign.muted)
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
         .padding(14)
+        .frame(maxWidth: .infinity, minHeight: floatingWidgetHeight, maxHeight: floatingWidgetHeight, alignment: .topLeading)
         .background(WokeyDesign.panel.opacity(0.72))
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
@@ -454,20 +511,30 @@ struct TodayView: View {
                 Text("확인할 질문이 없습니다.")
                     .font(.caption)
                     .foregroundStyle(WokeyDesign.muted)
-                    .frame(maxWidth: .infinity, minHeight: 74, alignment: .topLeading)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
         .padding(14)
+        .frame(maxWidth: .infinity, minHeight: floatingWidgetHeight, maxHeight: floatingWidgetHeight, alignment: .topLeading)
         .background(WokeyDesign.panel.opacity(0.72))
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private var briefingSection: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("브리핑")
-                .font(.title2)
-                .bold()
-                .foregroundStyle(WokeyDesign.ink)
+            HStack(alignment: .firstTextBaseline) {
+                Text("브리핑")
+                    .font(.title2)
+                    .bold()
+                    .foregroundStyle(WokeyDesign.ink)
+
+                if !isSelectedDateToday {
+                    Text(selectedDate.formatted(date: .abbreviated, time: .omitted))
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(WokeyDesign.muted)
+                }
+            }
 
             VStack(alignment: .leading, spacing: 14) {
                 ForEach(briefingSlots) { slot in
@@ -493,7 +560,7 @@ struct TodayView: View {
                 Spacer()
             }
 
-            if let briefing = todayBriefing(for: slot.type) {
+            if let briefing = selectedDateBriefing(for: slot.type) {
                 Text(briefing.content)
                     .font(.body)
                     .foregroundStyle(WokeyDesign.ink)
@@ -509,7 +576,7 @@ struct TodayView: View {
                         .lineLimit(4)
                         .textSelection(.enabled)
                 }
-            } else if slot.isDueNow {
+            } else if isSelectedDateToday && slot.isDueNow {
                 HStack(alignment: .center, spacing: 12) {
                     Text("아직 생성된 브리핑이 없습니다.")
                         .font(.subheadline)
@@ -523,9 +590,15 @@ struct TodayView: View {
                     .buttonStyle(.bordered)
                 }
                 .frame(maxWidth: .infinity, minHeight: 82, alignment: .center)
-            } else {
+            } else if isSelectedDateToday {
                 Text("\(slot.scheduledText) 이후 생성 가능")
                     .font(.title3)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(WokeyDesign.muted)
+                    .frame(maxWidth: .infinity, minHeight: 82, alignment: .center)
+            } else {
+                Text("이 날짜에 생성된 브리핑이 없습니다.")
+                    .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundStyle(WokeyDesign.muted)
                     .frame(maxWidth: .infinity, minHeight: 82, alignment: .center)
@@ -718,9 +791,14 @@ struct TodayView: View {
         TaskStatus(rawValue: rawValue)?.displayName ?? rawValue
     }
 
-    private func todayBriefing(for type: BriefingType) -> Briefing? {
+    private var isSelectedDateToday: Bool {
+        Calendar.current.isDateInToday(selectedDate)
+    }
+
+    private func selectedDateBriefing(for type: BriefingType) -> Briefing? {
         briefings.first {
-            $0.type == type.rawValue && Calendar.current.isDateInToday($0.date)
+            $0.type == type.rawValue &&
+            Calendar.current.isDate($0.date, inSameDayAs: selectedDate)
         }
     }
 

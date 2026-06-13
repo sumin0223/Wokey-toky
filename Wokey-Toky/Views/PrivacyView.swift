@@ -10,7 +10,7 @@ import SwiftUI
 struct PrivacyView: View {
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 28) {
                 headerSection
 
                 localFirstSection
@@ -21,20 +21,22 @@ struct PrivacyView: View {
 
                 userControlSection
             }
-            .padding()
+            .padding(.horizontal, 34)
+            .padding(.vertical, 30)
         }
         .navigationTitle("Privacy")
     }
 
     private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 7) {
             Text("Privacy")
-                .font(.largeTitle)
-                .bold()
+                .font(.title)
+                .fontWeight(.bold)
+                .foregroundStyle(WokeyDesign.ink)
 
             Text("Wokey-Toky는 개인 작업 맥락을 다루기 때문에, 수집 범위와 저장 원칙을 명확히 해야 합니다.")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(.caption)
+                .foregroundStyle(WokeyDesign.muted)
         }
     }
 
@@ -47,19 +49,25 @@ struct PrivacyView: View {
     }
 
     private var notCollectedSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             Text("수집하지 않는 정보")
-                .font(.title2)
-                .bold()
+                .font(.headline)
+                .fontWeight(.bold)
+                .foregroundStyle(WokeyDesign.ink)
 
             privacyBullet("키 입력 원문은 수집하지 않습니다.")
             privacyBullet("클립보드 내용은 읽지 않습니다.")
             privacyBullet("비밀번호 필드 내용을 직접 수집하지 않습니다.")
             privacyBullet("원본 스크린샷을 장기 저장하지 않는 방향으로 설계합니다.")
         }
-        .padding()
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding(22)
+        .background(WokeyDesign.quietFill)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(WokeyDesign.hairline, lineWidth: 1)
+        }
+        .shadow(color: Color.black.opacity(0.04), radius: 12, x: 0, y: 6)
     }
 
     private var screenCaptureSection: some View {
@@ -83,36 +91,46 @@ struct PrivacyView: View {
         systemImage: String,
         bodyText: String
     ) -> some View {
-        HStack(alignment: .top, spacing: 16) {
+        HStack(alignment: .top, spacing: 14) {
             Image(systemName: systemImage)
-                .font(.title2)
-                .frame(width: 32)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(WokeyDesign.blue)
+                .frame(width: 28)
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 7) {
                 Text(title)
-                    .font(.title2)
-                    .bold()
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundStyle(WokeyDesign.ink)
 
                 Text(bodyText)
-                    .font(.body)
-                    .foregroundStyle(.secondary)
+                    .font(.caption)
+                    .foregroundStyle(WokeyDesign.muted)
+                    .lineSpacing(2)
             }
 
             Spacer()
         }
-        .padding()
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding(22)
+        .background(WokeyDesign.quietFill)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(WokeyDesign.hairline, lineWidth: 1)
+        }
+        .shadow(color: Color.black.opacity(0.04), radius: 12, x: 0, y: 6)
     }
 
     private func privacyBullet(_ text: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.caption)
+                .foregroundStyle(WokeyDesign.blue)
                 .padding(.top, 3)
 
             Text(text)
-                .font(.body)
+                .font(.caption)
+                .foregroundStyle(WokeyDesign.ink)
 
             Spacer()
         }

@@ -78,23 +78,21 @@ struct SummaryView: View {
     }
 
     private var plannerSummaryCard: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            HStack(alignment: .top, spacing: 24) {
-                calendarPanel
-                    .frame(width: 460, alignment: .topLeading)
+        VStack(alignment: .leading, spacing: 18) {
+            calendarPanel
 
+            HStack(alignment: .top, spacing: 14) {
                 eventSection
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-            }
+                    .frame(maxWidth: .infinity, minHeight: 280, alignment: .topLeading)
+                    .summaryColumnPanel()
 
-            Divider()
-
-            HStack(alignment: .top, spacing: 24) {
-                kakaoMessageSection
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                messageNoticeSection
+                    .frame(maxWidth: .infinity, minHeight: 280, alignment: .topLeading)
+                    .summaryColumnPanel()
 
                 taskStatusSection
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .frame(maxWidth: .infinity, minHeight: 280, alignment: .topLeading)
+                    .summaryColumnPanel()
             }
 
             dailySummaryTextSection
@@ -192,7 +190,7 @@ struct SummaryView: View {
         }
     }
 
-    private var kakaoMessageSection: some View {
+    private var messageNoticeSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text("Messages and notices")
@@ -202,7 +200,7 @@ struct SummaryView: View {
 
                 Spacer()
 
-                Text("Kakao")
+                Text("Kakao · Email")
                     .font(.caption)
                     .foregroundStyle(WokeyDesign.muted)
                     .padding(.horizontal, 10)
@@ -211,37 +209,28 @@ struct SummaryView: View {
                     .clipShape(Capsule())
             }
 
-            if kakaoMessageTasks.isEmpty {
-                inlineEmptyState("카카오톡에서 Task로 분류된 메시지가 없습니다.")
+            if messageNoticeTasks.isEmpty {
+                inlineEmptyState("카카오톡과 이메일에서 가져온 알림 정보가 없습니다.")
             } else {
                 LazyVStack(alignment: .leading, spacing: 10) {
-                    ForEach(kakaoMessageTasks.prefix(5)) { task in
-                        kakaoMessageRow(task)
+                    ForEach(messageNoticeTasks.prefix(5)) { task in
+                        messageNoticeRow(task)
                     }
                 }
             }
         }
     }
 
-    private func kakaoMessageRow(_ task: TaskItem) -> some View {
+    private func messageNoticeRow(_ task: TaskItem) -> some View {
         Button {
-            openKakaoTalk()
+            openSourceApp(for: task)
         } label: {
             HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(Color.black.opacity(0.08))
-                        .frame(width: 36, height: 36)
-
-                    Text(kakaoInitial(for: task))
-                        .font(.caption)
-                        .fontWeight(.bold)
-                        .foregroundStyle(WokeyDesign.ink)
-                }
+                sourceBadge(for: task.source)
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
-                        Text(kakaoSenderName(for: task))
+                        Text(sourceTitle(for: task))
                             .font(.headline)
                             .foregroundStyle(WokeyDesign.ink)
 
@@ -263,6 +252,65 @@ struct SummaryView: View {
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func sourceBadge(for source: String) -> some View {
+        switch source {
+        case "kakaoTalk", "kakaoMessage":
+            ZStack {
+                Circle()
+                    .fill(Color(red: 0.99, green: 0.88, blue: 0.18))
+
+                Text("K")
+                    .font(.caption)
+                    .fontWeight(.black)
+                    .foregroundStyle(Color.black.opacity(0.82))
+            }
+            .frame(width: 36, height: 36)
+
+        case "naverMail":
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color(red: 0.02, green: 0.78, blue: 0.34))
+
+                Text("N")
+                    .font(.caption)
+                    .fontWeight(.black)
+                    .foregroundStyle(.white)
+            }
+            .frame(width: 36, height: 36)
+
+        case "gmail":
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.white.opacity(0.95))
+
+                Text("G")
+                    .font(.caption)
+                    .fontWeight(.black)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.blue, .red, .yellow, .green],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            }
+            .frame(width: 36, height: 36)
+            .overlay {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(WokeyDesign.hairline, lineWidth: 1)
+            }
+
+        default:
+            Image(systemName: "tray.full")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(WokeyDesign.blue)
+                .frame(width: 36, height: 36)
+                .background(WokeyDesign.selection)
+                .clipShape(Circle())
+        }
     }
 
     private var taskStatusSection: some View {
@@ -356,16 +404,39 @@ struct SummaryView: View {
     }
 
     private var calendarPanel: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Calendar")
-                .font(.title3)
-                .fontWeight(.semibold)
-                .foregroundStyle(WokeyDesign.ink)
+        ZStack(alignment: .topLeading) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Calendar")
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(WokeyDesign.ink)
+
+                Text(selectedDate.formatted(date: .complete, time: .omitted))
+                    .font(.caption)
+                    .foregroundStyle(WokeyDesign.muted)
+
+                Spacer(minLength: 0)
+            }
+            .frame(width: 190, alignment: .topLeading)
 
             WokeyMonthCalendar(
                 selectedDate: $selectedDate,
-                markedDays: markedDayKeys
+                markedDays: markedDayKeys,
+                cellSize: 48,
+                cellSpacing: 10,
+                showsMonthTitle: false
             )
+            .fixedSize(horizontal: true, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .center)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(WokeyDesign.quietFill)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(WokeyDesign.hairline, lineWidth: 1)
         }
         .onChange(of: selectedDate) { _, _ in
             buildLogPreview()
@@ -755,8 +826,10 @@ struct SummaryView: View {
         }
     }
 
-    private var kakaoMessageTasks: [TaskItem] {
-        selectedTaskItems.filter { $0.source == "kakaoTalk" || $0.source == "kakaoMessage" }
+    private var messageNoticeTasks: [TaskItem] {
+        selectedTaskItems.filter {
+            ["kakaoTalk", "kakaoMessage", "naverMail", "gmail"].contains($0.source)
+        }
     }
 
     private var summaryTextForSelectedDate: String {
@@ -834,6 +907,19 @@ struct SummaryView: View {
         return "시간 미정"
     }
 
+    private func sourceTitle(for task: TaskItem) -> String {
+        switch task.source {
+        case "kakaoTalk", "kakaoMessage":
+            return kakaoSenderName(for: task)
+        case "naverMail":
+            return "Naver Mail"
+        case "gmail":
+            return "Gmail"
+        default:
+            return sourceLabel(for: task.source)
+        }
+    }
+
     private func kakaoSenderName(for task: TaskItem) -> String {
         task.relatedKeywords?
             .split(separator: ",")
@@ -841,13 +927,37 @@ struct SummaryView: View {
             .map(String.init) ?? "KakaoTalk"
     }
 
-    private func kakaoInitial(for task: TaskItem) -> String {
-        String(kakaoSenderName(for: task).prefix(1))
+    private func sourceLabel(for source: String) -> String {
+        switch source {
+        case "kakaoTalk", "kakaoMessage":
+            return "KakaoTalk"
+        case "naverMail":
+            return "Naver Mail"
+        case "gmail":
+            return "Gmail"
+        case "manual":
+            return "Manual"
+        default:
+            return source
+        }
     }
 
-    private func openKakaoTalk() {
-        if let kakaoURL = URL(string: "kakaotalk://") {
-            NSWorkspace.shared.open(kakaoURL)
+    private func openSourceApp(for task: TaskItem) {
+        switch task.source {
+        case "kakaoTalk", "kakaoMessage":
+            if let kakaoURL = URL(string: "kakaotalk://") {
+                NSWorkspace.shared.open(kakaoURL)
+            }
+        case "naverMail":
+            if let url = URL(string: "https://mail.naver.com/") {
+                NSWorkspace.shared.open(url)
+            }
+        case "gmail":
+            if let url = URL(string: "https://mail.google.com/") {
+                NSWorkspace.shared.open(url)
+            }
+        default:
+            break
         }
     }
 
@@ -1049,6 +1159,18 @@ struct SummaryView: View {
     private func angleEnd(for index: Int) -> Angle {
         let ratio = appUsageRows.prefix(index + 1).reduce(0.0) { $0 + $1.ratio }
         return .degrees(ratio * 360 - 90)
+    }
+}
+
+private extension View {
+    func summaryColumnPanel() -> some View {
+        padding(16)
+            .background(WokeyDesign.quietFill)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(WokeyDesign.hairline, lineWidth: 1)
+            }
     }
 }
 

@@ -276,8 +276,13 @@ struct SettingsView: View {
             }
         }
         .padding()
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .background(WokeyDesign.quietFill)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(WokeyDesign.hairline, lineWidth: 1)
+        }
+        .shadow(color: Color.black.opacity(0.04), radius: 12, x: 0, y: 6)
     }
     
     private var llmSection: some View {
@@ -599,8 +604,13 @@ struct SettingsView: View {
             }
         }
         .padding()
-        .background(.quaternary)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .background(WokeyDesign.quietFill)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(WokeyDesign.hairline, lineWidth: 1)
+        }
+        .shadow(color: Color.black.opacity(0.04), radius: 12, x: 0, y: 6)
     }
     
     private var dangerZoneSection: some View {
@@ -875,4 +885,3 @@ struct SettingsView: View {
         }
     }
 }
-
