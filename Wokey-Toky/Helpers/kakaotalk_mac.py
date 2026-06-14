@@ -472,7 +472,7 @@ def container_path() -> Path:
 def verify_database_access(resolved: ResolvedAuth) -> bool:
     result = run_command(
         [
-            "kakaocli",
+            str(Path(__file__).resolve().parent / "kakaocli"),
             "query",
             "SELECT count(*) FROM sqlite_master",
             "--db",
@@ -565,7 +565,7 @@ def build_passthrough_command(command: str, auth: ResolvedAuth, forwarded_args: 
             f"Unsupported command '{command}'. Allowed read-only commands: {', '.join(READ_ONLY_COMMANDS)}"
         )
     return [
-        "kakaocli",
+        str(Path(__file__).resolve().parent / "kakaocli"),
         command,
         *forwarded_args,
         "--db",
