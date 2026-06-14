@@ -57,10 +57,10 @@ struct EmailImportView: View {
         }
         .overlay {
             if let candidate = editingCandidate {
-                ZStack {
-                    Button {
-                        editingCandidate = nil
-                    } label: {
+                        ZStack {
+                            Button {
+                                editingCandidate = nil
+                            } label: {
                         Rectangle()
                             .fill(Color.black.opacity(0.18))
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -82,7 +82,7 @@ struct EmailImportView: View {
             lastSyncedAt = nil
             errorMessage = nil
         }
-    }W
+    }
 
     private var providerSection: some View {
         VStack(alignment: .leading, spacing: 16) {

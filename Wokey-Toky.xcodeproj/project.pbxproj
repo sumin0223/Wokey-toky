@@ -11,6 +11,11 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		74959EFD2FDEE50D00C8C19F /* Helpers */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Helpers;
+			sourceTree = "<group>";
+		};
 		74A24C3A2FAC41D6007DFE88 /* Wokey-Toky */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = "Wokey-Toky";
@@ -32,6 +37,7 @@
 		74A24C2F2FAC41D6007DFE88 = {
 			isa = PBXGroup;
 			children = (
+				74959EFD2FDEE50D00C8C19F /* Helpers */,
 				74A24C3A2FAC41D6007DFE88 /* Wokey-Toky */,
 				74A24C752FAC5435007DFE88 /* Wokey-Toky.app */,
 			);
@@ -53,6 +59,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
+				74959EFD2FDEE50D00C8C19F /* Helpers */,
 				74A24C3A2FAC41D6007DFE88 /* Wokey-Toky */,
 			);
 			name = "Wokey-Toky";
@@ -246,7 +253,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 28WV3PUTXT;
+				DEVELOPMENT_TEAM = KVZV77U7V3;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -278,7 +285,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 28WV3PUTXT;
+				DEVELOPMENT_TEAM = KVZV77U7V3;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;

@@ -8,11 +8,39 @@
 import Foundation
 
 final class KakaoTalkService {
-    // helper 경로
-    private let helperPath = "\(NSHomeDirectory())/Desktop/k-skill/scripts/kakaotalk_mac.py"
-    private let pythonPath = "/opt/homebrew/bin/python3"
+    // helper 경로는 앱 번들/프로젝트/개발자 로컬 경로 순서로 탐색합니다.
+    private var helperPath: String? {
+        let fileManager = FileManager.default
+
+        let candidates: [String?] = [
+            Bundle.main.path(forResource: "kakaotalk_mac", ofType: "py"),
+            Bundle.main.path(forResource: "kakaotalk_mac", ofType: "py", inDirectory: "Helpers"),
+            "\(fileManager.currentDirectoryPath)/Helpers/kakaotalk_mac.py",
+            "\(fileManager.currentDirectoryPath)/scripts/kakaotalk_mac.py",
+            "\(NSHomeDirectory())/Desktop/k-skill/scripts/kakaotalk_mac.py"
+        ]
+
+        return candidates.compactMap { $0 }.first { fileManager.fileExists(atPath: $0) }
+    }
+
+    private var pythonPath: String? {
+        let fileManager = FileManager.default
+
+        let candidates = [
+            "/opt/homebrew/bin/python3",
+            "/usr/local/bin/python3",
+            "/usr/bin/python3"
+        ]
+
+        return candidates.first { fileManager.isExecutableFile(atPath: $0) }
+    }
     
     func checkAvailability() async -> Bool {
+        guard let helperPath,
+              let pythonPath else {
+            return false
+        }
+
         do {
             let output = try await runCommand(
                 launchPath: "/bin/zsh",
@@ -26,6 +54,11 @@ final class KakaoTalkService {
     }
 
     func fetchChatRooms(limit: Int = 30) async throws -> [KakaoTalkChatRoom] {
+        guard let helperPath,
+              let pythonPath else {
+            throw KakaoTalkServiceError.helperNotFound
+        }
+
         let command = "\(shellEscape(pythonPath)) \(shellEscape(helperPath)) chats --limit \(limit) --json"
 
         let output = try await runCommand(
@@ -46,6 +79,11 @@ final class KakaoTalkService {
         chatId: String,
         since: String = "1d"
     ) async throws -> [KakaoTalkMessageItem] {
+        guard let helperPath,
+              let pythonPath else {
+            throw KakaoTalkServiceError.helperNotFound
+        }
+
         let escapedChatId = shellEscape(chatId)
         let escapedSince = shellEscape(since)
 
@@ -366,12 +404,15 @@ final class KakaoTalkService {
 }
 
 enum KakaoTalkServiceError: LocalizedError {
+    case helperNotFound
     case commandFailed(String)
     case noChatRoomsFound(String)
     case noMessagesFound(String)
 
     var errorDescription: String? {
         switch self {
+        case .helperNotFound:
+            return "KakaoTalk helper를 찾지 못했습니다. Helpers/kakaotalk_mac.py를 프로젝트에 포함하거나 Python3 설치 경로를 확인해주세요."
         case .commandFailed(let message):
             return "KakaoTalk 명령 실행 실패: \(message)"
         case .noChatRoomsFound(let output):
