@@ -10,9 +10,23 @@
 		74A24C752FAC5435007DFE88 /* Wokey-Toky.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Wokey-Toky.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		74959F0C2FDEF01300C8C19F /* Exceptions for "Helpers" folder in "Wokey-Toky" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				kakaocli,
+				kakaotalk_mac.py,
+			);
+			target = 74A24C372FAC41D6007DFE88 /* Wokey-Toky */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		74959EFD2FDEE50D00C8C19F /* Helpers */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				74959F0C2FDEF01300C8C19F /* Exceptions for "Helpers" folder in "Wokey-Toky" target */,
+			);
 			path = Helpers;
 			sourceTree = "<group>";
 		};

@@ -59,7 +59,7 @@ final class KakaoTalkService {
             throw KakaoTalkServiceError.helperNotFound
         }
 
-        let command = "\(shellEscape(pythonPath)) \(shellEscape(helperPath)) chats --limit \(limit) --json"
+        let command = "\(shellEscape(pythonPath)) \(shellEscape(helperPath)) chats --limit \(limit) --json --max-user-id 3000000000"
 
         let output = try await runCommand(
             launchPath: "/bin/zsh",
@@ -87,7 +87,7 @@ final class KakaoTalkService {
         let escapedChatId = shellEscape(chatId)
         let escapedSince = shellEscape(since)
 
-        let command = "\(shellEscape(pythonPath)) \(shellEscape(helperPath)) messages --chat-id \(escapedChatId) --since \(escapedSince) --json"
+        let command = "\(shellEscape(pythonPath)) \(shellEscape(helperPath)) messages --chat-id \(escapedChatId) --since \(escapedSince) --json --max-user-id 3000000000"
 
         let output = try await runCommand(
             launchPath: "/bin/zsh",
